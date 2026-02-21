@@ -1,7 +1,7 @@
 # 🚀 VLESS Reality + Vision + CIDR SNI | Ultimate Aggregator
 
 [![GitHub Stars](https://img.shields.io/github/stars/hohlov2006362018-arch/vless-xhttp-xtls-reality-sni-ru?style=for-the-badge)](https://github.com/hohlov2006362018-arch/vless-xhttp-xtls-reality-sni-ru/stargazers)
-[![License](https://img.shields.io/github/license/hohlov2006362018-arch/vless-xhttp-xtls-reality-sni-ru?style=for-the-badge)](LICENSE)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg?style=for-the-badge)](https://www.gnu.org/licenses/gpl-3.0)
 [![Update](https://img.shields.io/badge/Auto--Update-Every%2012h-blueviolet?style=for-the-badge)](https://github.com/hohlov2006362018-arch/vless-xhttp-xtls-reality-sni-ru/actions)
 
 **VLESS Reality Aggregator** — это высокотехнологичный инструмент для автоматического сбора, проверки и глубокой модификации VPN-конфигураций. Проект создан для обеспечения стабильного и быстрого доступа в интернет в условиях жесткой цензуры и работы систем ТСПУ (DPI).

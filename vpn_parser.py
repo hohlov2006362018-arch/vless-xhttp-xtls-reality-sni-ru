@@ -141569,13 +141569,9 @@ RUSSIAN_CIDRS_RAW = """
 
 # Агрегаторы конфигов (самые стабильные источники)
 GITHUB_SOURCES = [
-    "https://raw.githubusercontent.com/yebekhe/TelegramV2rayCollector/main/sub/normal/vless",
-    "https://raw.githubusercontent.com/barry-far/V2ray-Configs/main/Splitted-By-Protocol/vless.txt",
-    "https://raw.githubusercontent.com/mahdibland/ShadowsocksAggregator/master/sub/sub_merge.txt",
-    "https://raw.githubusercontent.com/mahdibland/V2RayAggregator/master/Eternity.txt",
-    "https://raw.githubusercontent.com/soroushmirzaei/telegram-configs-collector/main/protocols/vless",
-    "https://raw.githubusercontent.com/tbbatbb/Proxy/master/main/vless",
-    "https://raw.githubusercontent.com/aiboboxx/v2rayfree/main/v2"
+    "https://raw.githubusercontent.com/Danialsamadi/v2go/main/AllConfigsSub.txt",
+    "https://raw.githubusercontent.com/barry-far/V2ray-config/main/All_Configs_Sub.txt",
+    "https://github.com/Epodonios/v2ray-configs/raw/main/All_Configs_Sub.txt"
 ]
 
 GEOIP_DB_URL = "https://raw.githubusercontent.com/P3TERX/GeoLite.mmdb/download/GeoLite2-Country.mmdb"
@@ -141723,4 +141719,5 @@ class VlessParser:
             print("[!] Живых серверов не найдено после фильтрации.")
 
 if __name__ == "__main__":
+
     VlessParser().run()

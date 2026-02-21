@@ -2,42 +2,51 @@ name: Auto Update VPN Configs
 
 on:
   schedule:
-    # Запуск каждые 12 часов (в 00:00 и 12:00 по UTC)
+    # Запуск дважды в день: в 00:00 и 12:00 по UTC
     - cron: '0 0,12 * * *'
-  workflow_dispatch: # Позволяет запустить скрипт вручную кнопкой "Run workflow"
+  workflow_dispatch: # Позволяет запускать вручную через вкладку Actions
 
 permissions:
-  contents: write # Разрешаем боту перезаписывать файл .txt в твоем репозитории
+  contents: write # Критически важно для возможности сохранения файла
 
 jobs:
   update-proxies:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Скачиваем твой репозиторий на виртуальный сервер
+      # 1. Загрузка кода из репозитория
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      # 2. Устанавливаем Python
+      # 2. Настройка среды Python
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
 
-      # 3. Устанавливаем нужные библиотеки
+      # 3. Установка библиотек
       - name: Install dependencies
-        run: pip install requests maxminddb
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests maxminddb
 
-      # 4. Запускаем наш парсер (Убедись, что файл в репозитории называется vpn_parser.py)
+      # 4. Запуск твоего скрипта
       - name: Run VPN Parser
         run: python vpn_parser.py
 
-# 5. Сохраняем свежие ключи обратно в репозиторий
+      # 5. Сохранение обновленного файла в репозиторий
       - name: Commit and Push changes
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          
+          # Добавляем только итоговый файл
           git add best_ru_sni_reality.txt
-          # Игнорируем базу GeoIP, чтобы не раздувать репозиторий
-          git commit -m "🔥 Автообновление VPN серверов" || echo "Нет изменений для коммита"
-          git push
+          
+          # Проверяем, есть ли изменения, чтобы не плодить пустые коммиты
+          if git diff --staged --quiet; then
+            echo "Нет новых серверов для обновления."
+          else
+            git commit -m "🔥 Автообновление списка серверов: $(date +'%Y-%m-%d %H:%M')"
+            git push
+          fi

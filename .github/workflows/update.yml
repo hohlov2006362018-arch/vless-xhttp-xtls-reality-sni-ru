@@ -32,11 +32,12 @@ jobs:
       - name: Run VPN Parser
         run: python vpn_parser.py
 
-      # 5. Сохраняем свежие ключи обратно в репозиторий
+# 5. Сохраняем свежие ключи обратно в репозиторий
       - name: Commit and Push changes
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add best_ru_sni_reality.txt
+          # Игнорируем базу GeoIP, чтобы не раздувать репозиторий
           git commit -m "🔥 Автообновление VPN серверов" || echo "Нет изменений для коммита"
           git push

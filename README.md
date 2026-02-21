@@ -55,4 +55,4 @@
 ### Шаг 1: Получение ссылки
 Скопируйте вашу прямую ссылку на Raw-файл:
 ```text
-https://raw.githubusercontent.com/hohlov2006362018-arch/vless-xhttp-xtls-reality-sni-ru/main/best_ru_sni_reality.txt](https://raw.githubusercontent.com/hohlov2006362018-arch/vless-xhttp-xtls-reality-sni-ru/main/best_ru_sni_reality.txt)
+https://raw.githubusercontent.com/hohlov2006362018-arch/vless-xhttp-xtls-reality-sni-ru/main/best_ru_sni_reality.txt

@@ -2,7 +2,6 @@
 
 <p align="center">
   <img src="https://img.shields.io/github/stars/hohlov2006362018-arch/vless-xhttp-xtls-reality-sni-ru?style=for-the-badge&color=blueviolet" alt="Stars">
-  <img src="https://img.shields.io/github/actions/workflow/status/hohlov2006362018-arch/vless-xhttp-xtls-reality-sni-ru/update.yml?style=for-the-badge" alt="Build Status">
   <img src="https://img.shields.io/badge/Auto--Update-Every%2012h-blue?style=for-the-badge" alt="Update">
   <img src="https://img.shields.io/badge/License-GPLv3-green?style=for-the-badge" alt="License">
 </p>

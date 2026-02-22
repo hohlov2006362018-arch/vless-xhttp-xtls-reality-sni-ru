@@ -38,7 +38,7 @@ GITHUB_SOURCES = [
     "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/WHITE-CIDR-RU-all.txt",
     "https://raw.githubusercontent.com/MrMohebi/xray-proxy-grabber-telegram/master/collected-proxies/row-url/all.txt",
     "https://raw.githubusercontent.com/wiki/gfpcom/free-proxy-list/lists/vless.txt",
-    "https://raw.githubusercontent.com/hamedcode/port-based-v2ray-configs/main/sub/vless.txt,
+    "https://raw.githubusercontent.com/hamedcode/port-based-v2ray-configs/main/sub/vless.txt",
     "https://raw.githubusercontent.com/iboxz/free-v2ray-collector/main/main/mix.txt"
     "https://github.com/nikita29a/FreeProxyList/raw/refs/heads/main/mirror/1.txt",
     "https://github.com/nikita29a/FreeProxyList/raw/refs/heads/main/mirror/2.txt",
@@ -141768,4 +141768,5 @@ class VlessParser:
 if __name__ == "__main__":
 
     VlessParser().run()
+
 

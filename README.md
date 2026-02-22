@@ -1,3 +1,5 @@
+P.S В каждом скрипте добавляю всё больше проверенных аггрегаторов (или сборщиков хз)
+
 # 🚀 VLESS Reality + Vision + CIDR SNI | Ultimate Aggregator
 
 [![GitHub Звёзды](https://img.shields.io/github/stars/hohlov2006362018-arch/vless-xhttp-xtls-reality-sni-ru?style=for-the-badge)](https://github.com/hohlov2006362018-arch/vless-xhttp-xtls-reality-sni-ru/stargazers)

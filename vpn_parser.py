@@ -34,9 +34,50 @@ GITHUB_SOURCES = [
     "https://raw.githubusercontent.com/LalatinaHub/Mineral/refs/heads/master/result/nodes",
     "https://raw.githubusercontent.com/MahsaNetConfigTopic/config/refs/heads/main/xray_final.txt",
     "https://raw.githubusercontent.com/mohamadfg-dev/telegram-v2ray-configs-collector/refs/heads/main/category/vless.txt",
-    "https://raw.githubusercontent.com/CidVpn/cid-vpn-config/refs/heads/main/general.txt"
+    "https://raw.githubusercontent.com/CidVpn/cid-vpn-config/refs/heads/main/general.txt",
+    "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/WHITE-CIDR-RU-all.txt",
+    "https://raw.githubusercontent.com/MrMohebi/xray-proxy-grabber-telegram/master/collected-proxies/row-url/all.txt",
+    "https://raw.githubusercontent.com/wiki/gfpcom/free-proxy-list/lists/vless.txt",
+    "https://raw.githubusercontent.com/hamedcode/port-based-v2ray-configs/main/sub/vless.txt,
+    "https://raw.githubusercontent.com/iboxz/free-v2ray-collector/main/main/mix.txt"
+    "https://github.com/nikita29a/FreeProxyList/raw/refs/heads/main/mirror/1.txt",
+    "https://github.com/nikita29a/FreeProxyList/raw/refs/heads/main/mirror/2.txt",
+    "https://github.com/nikita29a/FreeProxyList/raw/refs/heads/main/mirror/3.txt",
+    "https://github.com/nikita29a/FreeProxyList/raw/refs/heads/main/mirror/4.txt",
+    "https://github.com/nikita29a/FreeProxyList/raw/refs/heads/main/mirror/5.txt",
+    "https://github.com/nikita29a/FreeProxyList/raw/refs/heads/main/mirror/6.txt",
+    "https://github.com/nikita29a/FreeProxyList/raw/refs/heads/main/mirror/7.txt",
+    "https://github.com/nikita29a/FreeProxyList/raw/refs/heads/main/mirror/8.txt",
+    "https://github.com/nikita29a/FreeProxyList/raw/refs/heads/main/mirror/9.txt",
+    "https://github.com/nikita29a/FreeProxyList/raw/refs/heads/main/mirror/10.txt",
+    "https://github.com/nikita29a/FreeProxyList/raw/refs/heads/main/mirror/11.txt",
+    "https://github.com/nikita29a/FreeProxyList/raw/refs/heads/main/mirror/12.txt",
+    "https://github.com/nikita29a/FreeProxyList/raw/refs/heads/main/mirror/13.txt",
+    "https://github.com/nikita29a/FreeProxyList/raw/refs/heads/main/mirror/14.txt",
+    "https://github.com/nikita29a/FreeProxyList/raw/refs/heads/main/mirror/15.txt",
+    "https://github.com/nikita29a/FreeProxyList/raw/refs/heads/main/mirror/16.txt",
+    "https://github.com/nikita29a/FreeProxyList/raw/refs/heads/main/mirror/17.txt",
+    "https://github.com/nikita29a/FreeProxyList/raw/refs/heads/main/mirror/18.txt",
+    "https://github.com/nikita29a/FreeProxyList/raw/refs/heads/main/mirror/19.txt",
+    "https://github.com/nikita29a/FreeProxyList/raw/refs/heads/main/mirror/20.txt",
+    "https://github.com/nikita29a/FreeProxyList/raw/refs/heads/main/mirror/21.txt",
+    "https://github.com/nikita29a/FreeProxyList/raw/refs/heads/main/mirror/22.txt",
+    "https://github.com/nikita29a/FreeProxyList/raw/refs/heads/main/mirror/23.txt",
+    "https://github.com/nikita29a/FreeProxyList/raw/refs/heads/main/mirror/24.txt",
+    "https://github.com/nikita29a/FreeProxyList/raw/refs/heads/main/mirror/25.txt",
+    "https://raw.githubusercontent.com/mahdibland/ShadowsocksAggregator/master/sub/sub_merge.txt",
+    "https://raw.githubusercontent.com/awesome-vpn/awesome-vpn/master/all",
+    "https://raw.githubusercontent.com/freefq/free/master/v2",
+    "https://raw.githubusercontent.com/Pawdroid/Free-servers/main/sub",
+    "https://raw.githubusercontent.com/aiboboxx/v2rayfree/main/v2",
+    "https://raw.githubusercontent.com/AzadNetCH/Clash/main/V2Ray.txt",
+    "https://raw.githubusercontent.com/vpei/Free-Node-Merge/main/o/node.txt",
+    "https://raw.githubusercontent.com/tbbatbb/Proxy/master/dist/v2ray.config.txt",
+    "https://raw.fastgit.org/ripaojiedian/freenode/main/sub",
+    "https://github.xiaoku666.tk/https://raw.githubusercontent.com/ripaojiedian/freenode/main/sub",
+    "https://raw.githubusercontent.com/learnhard-cn/free_proxy_ss/main/v2ray/v2raysub",
+    "https://raw.githubusercontent.com/MahanKenway/Freedom-V2Ray/main/configs/vless.txt"
 ]
-
 # --- 2. НАСТРОЙКИ МАСКИРОВКИ ---
 FORCE_CIDR_SNI = False  # ЕСЛИ ПОСТАВИТЬ True, сервера могут перестать работать (см. разбор выше)
 
@@ -141727,3 +141768,4 @@ class VlessParser:
 if __name__ == "__main__":
 
     VlessParser().run()
+

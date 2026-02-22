@@ -1,103 +1,62 @@
+# 👻 TheDarkGhost's VPN: Ultimate VLESS Reality Aggregator
 
-> [!IMPORTANT]
-> **❗ НАСТОЯТЕЛЬНО РЕКОМЕНДУЮ ИСПОЛЬЗОВАТЬ ПОДПИСКУ В HIDDIFY ❗**
+<p align="center">
+  <img src="https://img.shields.io/github/stars/hohlov2006362018-arch/vless-xhttp-xtls-reality-sni-ru?style=for-the-badge&color=blueviolet" alt="Stars">
+  <img src="https://img.shields.io/github/actions/workflow/status/hohlov2006362018-arch/vless-xhttp-xtls-reality-sni-ru/update.yml?style=for-the-badge" alt="Build Status">
+  <img src="https://img.shields.io/badge/Auto--Update-Every%2012h-blue?style=for-the-badge" alt="Update">
+  <img src="https://img.shields.io/badge/License-GPLv3-green?style=for-the-badge" alt="License">
+</p>
 
 ---
 
-### Шаг 2 — Настройка Hiddify `v4.0.4`
+## 🚀 О проекте
+**TheDarkGhost's VPN** — это высокотехнологичный инструмент для автоматического сбора, глубокой фильтрации и оптимизации VLESS Reality конфигураций. Проект создан специально для обхода самых суровых систем DPI (ТСПУ) и обеспечения стабильного доступа в интернет.
 
-<details>
-<summary><b>📖 Пошаговая инструкция по импорту</b></summary>
+### Основные фишки:
+* **Reality + Vision:** Сбор только самых современных и скрытных протоколов.
+* **RU-SNI Optimization:** Автоматическая подмена SNI на популярные российские ресурсы для маскировки трафика.
+* **Smart Filtering:** Скрипт проверяет серверы на доступность и отсеивает мусор.
+* **Auto-pilot:** Полное обновление базы каждые 12 часов через GitHub Actions.
+* **Full Hiddify Support:** Поддержка подписки с отображением статистики (6767 ГБ).
 
-<br>
+---
 
-| Шаг | Действие |
-|:---:|:---|
-| **1** | Заходим в **Hiddify** |
-| **2** | Ищем боковую кнопку `Настройки` *(интерфейс может различаться на разных платформах)* |
-| **3** | Ищем **три точки** — должна быть опция, связанная с импортом |
-| **4** | Нажимаем **«Импортировать настройки из буфера обмена»** |
-| **5** | ✅ **ГОТОВО!** |
+## 🛠 Быстрый старт (Hiddify / NekoBox / v2rayN)
 
-</details>
+Самый простой способ использовать — добавить ссылку как подписку.
 
-<details>
-<summary><b>⚙️ Универсальные настройки для импорта (JSON)</b></summary>
+1.  Скопируй ссылку на подписку:
+    `https://thedarkghostsvpn.hohlov2006362018.workers.dev/`
+2.  Открой **Hiddify** (или свой клиент).
+3.  Нажми **"Новый профиль"** -> **"Добавить из URL"**.
+4.  Вставь скопированную ссылку.
+5.  Наслаждайся! (И не забудь про 6767 ГБ статы 😎).
 
-<br>
+---
 
-```json
-{
-  "region": "ru",
-  "block-ads": true,
-  "use-xray-core-when-possible": false,
-  "execute-config-as-is": false,
-  "log-level": "warn",
-  "resolve-destination": true,
-  "ipv6-mode": "ipv4_only",
-  "remote-dns-address": "https://1.1.1.1/dns-query",
-  "remote-dns-domain-strategy": "ipv4_only",
-  "direct-dns-address": "https://77.88.8.8/dns-query",
-  "direct-dns-domain-strategy": "ipv4_only",
-  "mixed-port": 12334,
-  "tproxy-port": 12335,
-  "direct-port": 12337,
-  "redirect-port": 12336,
-  "tun-implementation": "system",
-  "mtu": 9000,
-  "strict-route": true,
-  "connection-test-url": "http://cp.cloudflare.com",
-  "url-test-interval": 600,
-  "enable-clash-api": true,
-  "clash-api-port": 16756,
-  "enable-tun": true,
-  "enable-tun-service": false,
-  "set-system-proxy": false,
-  "bypass-lan": true,
-  "allow-connection-from-lan": false,
-  "enable-fake-dns": true,
-  "independent-dns-cache": true,
-  "rules": [],
-  "mux": {
-    "enable": true,
-    "padding": true,
-    "max-streams": 8,
-    "protocol": "h2mux"
-  },
-  "tls-tricks": {
-    "enable-fragment": true,
-    "fragment-size": "10-20",
-    "fragment-sleep": "10-20",
-    "mixed-sni-case": true,
-    "enable-padding": true,
-    "padding-size": "1-1500"
-  },
-  "warp": {
-    "enable": false,
-    "mode": "warp_over_proxy",
-    "wireguard-config": "",
-    "license-key": "",
-    "account-id": "",
-    "access-token": "",
-    "clean-ip": "auto",
-    "clean-port": 0,
-    "noise": "1-3",
-    "noise-size": "10-30",
-    "noise-delay": "10-30",
-    "noise-mode": "m4"
-  },
-  "warp2": {
-    "enable": false,
-    "mode": "warp_over_proxy",
-    "wireguard-config": "",
-    "license-key": "",
-    "account-id": "",
-    "access-token": "",
-    "clean-ip": "auto",
-    "clean-port": 0,
-    "noise": "1-3",
-    "noise-size": "10-30",
-    "noise-delay": "10-30",
-    "noise-mode": "m4"
-  }
-}
+## 🚦 Правильная настройка (Маршрутизация)
+
+Чтобы российские сайты (Госуслуги, банки, Яндекс) открывались без проблем и пинговались, включи раздельное туннелирование:
+
+### В Hiddify:
+1. Зайди в **Settings** (Настройки) -> **Routing** (Маршрутизация).
+2. В поле **Mode** выбери **Bypass LAN/RU** (Только заблокированные).
+3. *Опционально:* В **Custom Rules** добавь `Direct` для `geoip:ru` и `geosite:ru`.
+
+---
+
+## 📦 Что под капотом?
+
+Проект состоит из мощного Python-парсера, который:
+1. Сканирует более 15 топовых агрегаторов.
+2. Декодирует `base64` и извлекает чистые `vless://` ссылки.
+3. Проверяет валидность и группирует ключи.
+4. Применяет магию Cloudflare Workers для визуального оформления подписки.
+
+### Для разработчиков:
+Если хочешь запустить парсер локально:
+```bash
+git clone [https://github.com/hohlov2006362018-arch/vless-xhttp-xtls-reality-sni-ru.git](https://github.com/hohlov2006362018-arch/vless-xhttp-xtls-reality-sni-ru.git)
+cd vless-xhttp-xtls-reality-sni-ru
+pip install requests maxminddb
+python vpn_parser.py

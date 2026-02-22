@@ -53,6 +53,105 @@
 ## 📲 Быстрый старт
 
 ### Шаг 1: Получение ссылки
-Скопируйте вашу прямую ссылку на Raw-файл:
+Скопируйте ссылку для импорта подписки:
 ```text
 https://raw.githubusercontent.com/hohlov2006362018-arch/vless-xhttp-xtls-reality-sni-ru/main/best_ru_sni_reality.txt
+```
+**❗❗❗ НАСТОЯТЕЛЬНО РЕКОМЕНДУЮ ИСПОЛЬЗОВАТЬ ПОДПИСКУ В HIDDIFY ❗❗❗**
+
+### **Шаг 2: Настройка Hiddify v4.0.4**
+
+*1.* Заходим в Hiddify.
+*2.* Ищем боковую кнопку `настройки` *(Разные платформы, интерфейс может изменится)*
+*3.* Ищем три точки и должно что-то быть связано с импортом.
+*4.* Нажимаем `Импортировать настройки из буфера обмена`.
+*5.* ГОТОВО!
+
+Импорт подписки (универсальный):
+```json
+{
+  "region": "ru",
+  "block-ads": true,
+  "use-xray-core-when-possible": false,
+  "execute-config-as-is": false,
+  "log-level": "warn",
+  "resolve-destination": true,
+  "ipv6-mode": "ipv4_only",
+  "remote-dns-address": "https://1.1.1.1/dns-query",
+  "remote-dns-domain-strategy": "ipv4_only",
+  "direct-dns-address": "https://77.88.8.8/dns-query",
+  "direct-dns-domain-strategy": "ipv4_only",
+  "mixed-port": 12334,
+  "tproxy-port": 12335,
+  "direct-port": 12337,
+  "redirect-port": 12336,
+  "tun-implementation": "system",
+  "mtu": 9000,
+  "strict-route": true,
+  "connection-test-url": "http://cp.cloudflare.com",
+  "url-test-interval": 600,
+  "enable-clash-api": true,
+  "clash-api-port": 16756,
+  "enable-tun": true,
+  "enable-tun-service": false,
+  "set-system-proxy": false,
+  "bypass-lan": true,
+  "allow-connection-from-lan": false,
+  "enable-fake-dns": true,
+  "independent-dns-cache": true,
+  "rules": [],
+  "mux": {
+    "enable": true,
+    "padding": true,
+    "max-streams": 8,
+    "protocol": "h2mux"
+  },
+  "tls-tricks": {
+    "enable-fragment": true,
+    "fragment-size": "10-20",
+    "fragment-sleep": "10-20",
+    "mixed-sni-case": true,
+    "enable-padding": true,
+    "padding-size": "1-1500"
+  },
+  "warp": {
+    "enable": false,
+    "mode": "warp_over_proxy",
+    "wireguard-config": "",
+    "license-key": "",
+    "account-id": "",
+    "access-token": "",
+    "clean-ip": "auto",
+    "clean-port": 0,
+    "noise": "1-3",
+    "noise-size": "10-30",
+    "noise-delay": "10-30",
+    "noise-mode": "m4"
+  },
+  "warp2": {
+    "enable": false,
+    "mode": "warp_over_proxy",
+    "wireguard-config": "",
+    "license-key": "",
+    "account-id": "",
+    "access-token": "",
+    "clean-ip": "auto",
+    "clean-port": 0,
+    "noise": "1-3",
+    "noise-size": "10-30",
+    "noise-delay": "10-30",
+    "noise-mode": "m4"
+  }
+}
+```
+
+---
+
+## ❓❓ РЕШЕНИЕ ПРОБЛЕМ ❓❓
+
+1) Не нравится, когда Hiddify, выбирает авто-м.
+   Ответ: **После включении, есть кнопка позволяющий выбрать нужный прокси, в данном случае у меня стрелка, у вас может быть написано Proxy/Прокси и выбирайте нужный вам сервер, который запинговался уже.**
+2) Не работает прокси.
+   Ответ: **Вам нужно поиграться с DNS, настроить под себя, фрагментация, маршрутизация и тд и тогда получится всё! Если не разбирайтесь можете спросить у нейронных моделей (AI/ИИ)**
+3) Не импортируется подписка.
+   Ответ: **Возможно ваш провайдер блокирует доступ, вам нужно попробовать с включённым прокси или же через домашний интернет, очень много проблем с мобильной сетью**

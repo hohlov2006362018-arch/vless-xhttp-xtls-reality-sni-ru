@@ -34,17 +34,6 @@
 
 ---
 
-## 🚦 Правильная настройка (Маршрутизация)
-
-Чтобы российские сайты (Госуслуги, банки, Яндекс) открывались без проблем и пинговались, включи раздельное туннелирование:
-
-### В Hiddify:
-1. Зайди в **Settings** (Настройки) -> **Routing** (Маршрутизация).
-2. В поле **Mode** выбери **Bypass LAN/RU** (Только заблокированные).
-3. *Опционально:* В **Custom Rules** добавь `Direct` для `geoip:ru` и `geosite:ru`.
-
----
-
 ## 📦 Что под капотом?
 
 Проект состоит из мощного Python-парсера, который:
@@ -52,11 +41,3 @@
 2. Декодирует `base64` и извлекает чистые `vless://` ссылки.
 3. Проверяет валидность и группирует ключи.
 4. Применяет магию Cloudflare Workers для визуального оформления подписки.
-
-### Для разработчиков:
-Если хочешь запустить парсер локально:
-```bash
-git clone [https://github.com/hohlov2006362018-arch/vless-xhttp-xtls-reality-sni-ru.git](https://github.com/hohlov2006362018-arch/vless-xhttp-xtls-reality-sni-ru.git)
-cd vless-xhttp-xtls-reality-sni-ru
-pip install requests maxminddb
-python vpn_parser.py

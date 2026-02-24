@@ -15,7 +15,7 @@ TIMEOUT = 3.0          # Таймаут (секунды) для пинга и DN
 TOP_N = 750            # Лимит лучших серверов в финальном файле
 
 # Фильтры
-REQUIRE_XHTTP =   # Поставь True, если нужны СТРОГО xhttp сервера (иначе оставит любые VLESS Reality)
+REQUIRE_XHTTP = False   # Поставь True, если нужны СТРОГО xhttp сервера (иначе оставит любые VLESS Reality)
 
 # --- ИСТОЧНИКИ ---
 GITHUB_SOURCES = [
@@ -267,3 +267,4 @@ if __name__ == "__main__":
         # Если это GitHub Actions / Ubuntu консоль - используем стандартный запуск
 
         asyncio.run(main())
+

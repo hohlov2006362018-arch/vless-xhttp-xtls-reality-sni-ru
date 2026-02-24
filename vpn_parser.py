@@ -12,10 +12,10 @@ from datetime import datetime
 # --- НАСТРОЙКИ ---
 MAX_CONNECTIONS = 500  # Кол-во одновременных потоков (идеально для GitHub Actions)
 TIMEOUT = 3.0          # Таймаут (секунды) для пинга и DNS-резолва
-TOP_N = 500            # Лимит лучших серверов в финальном файле
+TOP_N = 750            # Лимит лучших серверов в финальном файле
 
 # Фильтры
-REQUIRE_XHTTP = True  # Поставь True, если нужны СТРОГО xhttp сервера (иначе оставит любые VLESS Reality)
+REQUIRE_XHTTP =   # Поставь True, если нужны СТРОГО xhttp сервера (иначе оставит любые VLESS Reality)
 
 # --- ИСТОЧНИКИ ---
 GITHUB_SOURCES = [
@@ -265,4 +265,5 @@ if __name__ == "__main__":
         asyncio.run(main())
     else:
         # Если это GitHub Actions / Ubuntu консоль - используем стандартный запуск
+
         asyncio.run(main())

@@ -1,5 +1,5 @@
-# UPDATED: 2026-02-25 10:38:06
+# UPDATED: 2026-02-25 11:31:51
 # Protocol: VLESS Reality (RU SNI)
-# Total parsed: 117218 | Filtered Alive: 1
+# Total parsed: 103110 | Filtered Alive: 1
 
-vless://db444bee-8212-5ff5-be40-47e1a7509eb8@109.107.167.184:443?encryption=none&fp=chrome&mode=auto&path=%2F&pbk=6JYkJvkNiR3XQE2bkCV9r9URr5CXp2_RFlsBAi_Esg8&security=reality&sid=ed42&sni=sun6-21.userapi.com&type=xhttp#%5B103ms%5D%20%F0%9F%87%B3%F0%9F%87%B1%20The%20Netherlands%20%5B%2ACIDR%5D
+vless://db444bee-8212-5ff5-be40-47e1a7509eb8@109.107.167.184:443?encryption=none&fp=chrome&mode=auto&path=%2F&pbk=6JYkJvkNiR3XQE2bkCV9r9URr5CXp2_RFlsBAi_Esg8&security=reality&sid=ed42&sni=sun6-21.userapi.com&type=xhttp#%5B114ms%5D%20%F0%9F%87%B3%F0%9F%87%B1%20The%20Netherlands%20%5B%2ACIDR%5D

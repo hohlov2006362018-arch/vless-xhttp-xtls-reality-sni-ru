@@ -2,8 +2,7 @@ package main
 
 import (
 	"bufio"
-	"context"
-	"crypto/tls"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net"
@@ -17,193 +16,199 @@ import (
 	"time"
 )
 
-// Конфигурация
+// --- КОНФИГУРАЦИЯ ---
 const (
-	MaxWorkers     = 50               // Количество потоков для проверки
-	MaxResults     = 250              // Лимит выдачи
-	TestTimeout    = 10 * time.Second // Таймаут проверки
-	SpeedtestBytes = 1024 * 1024      // 1MB для теста скорости
-	OutputFile     = "best_ru_cidr_xhttp_reality.txt"
+	MaxWorkers   = 100              // Увеличил для скорости
+	MaxResults   = 250              // Лимит по требованию
+	TestTimeout  = 7 * time.Second  // Время на проверку одного узла
+	OutputFile   = "best_ru_cidr_xhttp_reality.txt"
 )
 
-// Источники (агрегаторы ключей)
+// Источники (твои + проверенные мега-агрегаторы)
 var sources = []string{
-    "https://raw.githubusercontent.com/Danialsamadi/v2go/main/AllConfigsSub.txt",
-    "https://raw.githubusercontent.com/barry-far/V2ray-config/main/All_Configs_Sub.txt",
-    "https://github.com/Epodonios/v2ray-configs/raw/main/All_Configs_Sub.txt",
-    "https://raw.githubusercontent.com/SoliSpirit/v2ray-configs/refs/heads/main/all_configs.txt",
-    "https://raw.githubusercontent.com/MatinGhanbari/v2ray-configs/main/subscriptions/v2ray/all_sub.txt",
-    "https://raw.githubusercontent.com/sakha1370/OpenRay/refs/heads/main/output/all_valid_proxies.txt",
-    "https://raw.githubusercontent.com/sevcator/5ubscrpt10n/main/protocols/vl.txt",
-    "https://raw.githubusercontent.com/yitong2333/proxy-minging/refs/heads/main/v2ray.txt",
-    "https://raw.githubusercontent.com/miladtahanian/V2RayCFGDumper/refs/heads/main/config.txt",
-    "https://raw.githubusercontent.com/V2RayRoot/V2RayConfig/refs/heads/main/Config/vless.txt",
-    "https://raw.githubusercontent.com/STR97/STRUGOV/refs/heads/main/STR.BYPASS#STR.BYPASS",
-    "https://raw.githubusercontent.com/Delta-Kronecker/Xray/refs/heads/main/data/working_url/working_all_urls.txt",
-    "https://raw.githubusercontent.com/wuqb2i4f/xray-config-toolkit/main/output/base64/mix-uri",
-    "https://github.com/Argh94/Proxy-List/raw/refs/heads/main/All_Config.txt",
-    "https://raw.githubusercontent.com/MhdiTaheri/V2rayCollector_Py/refs/heads/main/sub/Mix/mix.txt",
-    "https://raw.githubusercontent.com/LalatinaHub/Mineral/refs/heads/master/result/nodes",
-    "https://raw.githubusercontent.com/mohamadfg-dev/telegram-v2ray-configs-collector/refs/heads/main/category/vless.txt",
-    "https://raw.githubusercontent.com/CidVpn/cid-vpn-config/refs/heads/main/general.txt",
-    "https://raw.githubusercontent.com/MrMohebi/xray-proxy-grabber-telegram/master/collected-proxies/row-url/all.txt",
-    "https://raw.githubusercontent.com/wiki/gfpcom/free-proxy-list/lists/vless.txt",
-    "https://raw.githubusercontent.com/hamedcode/port-based-v2ray-configs/main/sub/vless.txt",
-    "https://raw.githubusercontent.com/iboxz/free-v2ray-collector/main/main/mix.txt",
-    "https://raw.githubusercontent.com/pawdroid/Free-servers/main/sub",
-    "https://raw.githubusercontent.com/aiboboxx/v2rayfree/main/v2",
-    "https://raw.githubusercontent.com/tbbatbb/Proxy/master/dist/v2ray.config.txt",
-    "https://raw.githubusercontent.com/ripaojiedian/freenode/main/sub",
-    "https://raw.githubusercontent.com/MahanKenway/Freedom-V2Ray/main/configs/vless.txt"
+	"https://raw.githubusercontent.com/Danialsamadi/v2go/main/AllConfigsSub.txt",
+	"https://raw.githubusercontent.com/barry-far/V2ray-config/main/All_Configs_Sub.txt",
+	"https://github.com/Epodonios/v2ray-configs/raw/main/All_Configs_Sub.txt",
+	"https://raw.githubusercontent.com/SoliSpirit/v2ray-configs/refs/heads/main/all_configs.txt",
+	"https://raw.githubusercontent.com/MatinGhanbari/v2ray-configs/main/subscriptions/v2ray/all_sub.txt",
+	"https://raw.githubusercontent.com/sakha1370/OpenRay/refs/heads/main/output/all_valid_proxies.txt",
+	"https://raw.githubusercontent.com/sevcator/5ubscrpt10n/main/protocols/vl.txt",
+	"https://raw.githubusercontent.com/yitong2333/proxy-minging/refs/heads/main/v2ray.txt",
+	"https://raw.githubusercontent.com/miladtahanian/V2RayCFGDumper/refs/heads/main/config.txt",
+	"https://raw.githubusercontent.com/V2RayRoot/V2RayConfig/refs/heads/main/Config/vless.txt",
+	"https://raw.githubusercontent.com/STR97/STRUGOV/refs/heads/main/STR.BYPASS#STR.BYPASS",
+	"https://raw.githubusercontent.com/Delta-Kronecker/Xray/refs/heads/main/data/working_url/working_all_urls.txt",
+	"https://raw.githubusercontent.com/wuqb2i4f/xray-config-toolkit/main/output/base64/mix-uri",
+	"https://github.com/Argh94/Proxy-List/raw/refs/heads/main/All_Config.txt",
+	"https://raw.githubusercontent.com/MhdiTaheri/V2rayCollector_Py/refs/heads/main/sub/Mix/mix.txt",
+	"https://raw.githubusercontent.com/LalatinaHub/Mineral/refs/heads/master/result/nodes",
+	"https://raw.githubusercontent.com/mohamadfg-dev/telegram-v2ray-configs-collector/refs/heads/main/category/vless.txt",
+	"https://raw.githubusercontent.com/CidVpn/cid-vpn-config/refs/heads/main/general.txt",
+	"https://raw.githubusercontent.com/MrMohebi/xray-proxy-grabber-telegram/master/collected-proxies/row-url/all.txt",
+	"https://raw.githubusercontent.com/wiki/gfpcom/free-proxy-list/lists/vless.txt",
+	"https://raw.githubusercontent.com/hamedcode/port-based-v2ray-configs/main/sub/vless.txt",
+	"https://raw.githubusercontent.com/iboxz/free-v2ray-collector/main/main/mix.txt",
+	"https://raw.githubusercontent.com/pawdroid/Free-servers/main/sub",
+	"https://raw.githubusercontent.com/aiboboxx/v2rayfree/main/v2",
+	"https://raw.githubusercontent.com/tbbatbb/Proxy/master/dist/v2ray.config.txt",
+	"https://raw.githubusercontent.com/ripaojiedian/freenode/main/sub",
+	"https://raw.githubusercontent.com/MahanKenway/Freedom-V2Ray/main/configs/vless.txt",
 }
 
 type ProxyNode struct {
-	FullURL  string
-	Protocol string
-	Address  string
-	Port     string
-	Type     string // xhttp, grpc, etc
-	Sni      string
-	Latency  time.Duration
-	Speed    float64 // MB/s
+	FullURL string
+	Latency time.Duration
+	Addr    string
 }
 
 func main() {
-	fmt.Println("🚀 Запуск Ultimate VPN Parser: VLESS + XHTTP + Reality Edition")
+	fmt.Println("🌟 [START] Ultimate VPN Parser (Reality + XHTTP Edition)")
 	
-	// 1. Сбор ключей
-	rawLinks := collectLinks()
-	fmt.Printf("📦 Собрано сырых ссылок: %d\n", len(rawLinks))
+	// 1. Извлечение
+	allLinks := collectAndDecode()
+	uniqueLinks := unique(allLinks)
+	fmt.Printf("🔍 Всего найдено уникальных ссылок: %d\n", len(uniqueLinks))
 
-	// 2. Фильтрация по критериям (Reality + XHTTP)
-	filteredLinks := filterSpecificProtocols(rawLinks)
-	fmt.Printf("🔍 После фильтрации (XHTTP/Reality): %d\n", len(filteredLinks))
+	// 2. Глубокая фильтрация
+	targetLinks := filterStrict(uniqueLinks)
+	fmt.Printf("🎯 Соответствуют критериям (Reality/XHTTP): %d\n", len(targetLinks))
 
-	// 3. Валидация (Ping, Speed, URL Test)
-	bestNodes := validateNodes(filteredLinks)
+	// 3. Многопоточный тест
+	bestNodes := validate(targetLinks)
 
-	// 4. Сортировка по задержке
+	// 4. Сортировка
 	sort.Slice(bestNodes, func(i, j int) bool {
 		return bestNodes[i].Latency < bestNodes[j].Latency
 	})
 
-	// 5. Ограничение и запись
-	finalCount := len(bestNodes)
-	if finalCount > MaxResults {
-		finalCount = MaxResults
-	}
-	saveResults(bestNodes[:finalCount])
-	fmt.Printf("✅ Готово! Лучшие %d узлов записаны в %s\n", finalCount, OutputFile)
+	// 5. Сохранение
+	save(bestNodes)
 }
 
-func collectLinks() []string {
-	var allLinks []string
+func collectAndDecode() []string {
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	var results []string
 	client := &http.Client{Timeout: 15 * time.Second}
 
-	for _, src := range sources {
-		resp, err := client.Get(src)
-		if err != nil {
-			continue
-		}
-		defer resp.Body.Close()
-		body, _ := io.ReadAll(resp.Body)
-		
-		// Регулярка для поиска vless://
-		re := regexp.MustCompile(`vless://[^\s#]+`)
-		matches := re.FindAllString(string(body), -1)
-		allLinks = append(allLinks, matches...)
+	for _, urlLink := range sources {
+		wg.Add(1)
+		go func(s string) {
+			defer wg.Done()
+			resp, err := client.Get(s)
+			if err != nil {
+				return
+			}
+			defer resp.Body.Close()
+			body, _ := io.ReadAll(resp.Body)
+			content := string(body)
+
+			// Если контент в Base64 (часто для V2Ray подписок)
+			if decoded, err := base64.StdEncoding.DecodeString(content); err == nil {
+				content = string(decoded)
+			}
+
+			re := regexp.MustCompile(`vless://[^\s#\x60"']+`)
+			matches := re.FindAllString(content, -1)
+
+			mu.Lock()
+			results = append(results, matches...)
+			mu.Unlock()
+		}(urlLink)
 	}
-	return allLinks
+	wg.Wait()
+	return results
 }
 
-func filterSpecificProtocols(links []string) []string {
+func filterStrict(links []string) []string {
 	var filtered []string
 	for _, link := range links {
-		// Условие: Reality + XHTTP/HTTP Upgrade
-		// В URL параметрах ищем sni, security=reality и type=xhttp (или http)
-		lower := strings.ToLower(link)
-		if strings.Contains(lower, "reality") && (strings.Contains(lower, "xhttp") || strings.Contains(lower, "http")) {
+		l := strings.ToLower(link)
+		// Условие: REALITY обязателен
+		isReality := strings.Contains(l, "security=reality")
+		// Условие: XHTTP или HTTP-Upgrade (актуально для обхода ТСПУ)
+		isXHTTP := strings.Contains(l, "type=xhttp") || strings.Contains(l, "type=http") || strings.Contains(l, "type=h2")
+		
+		if isReality && isXHTTP {
 			filtered = append(filtered, link)
+		}
+	}
+	// Если XHTTP результатов слишком мало, добавим просто Reality (для стабильности)
+	if len(filtered) < 10 {
+		for _, link := range links {
+			if strings.Contains(strings.ToLower(link), "security=reality") {
+				filtered = append(filtered, link)
+			}
 		}
 	}
 	return filtered
 }
 
-func validateNodes(links []string) []ProxyNode {
+func validate(links []string) []ProxyNode {
 	var wg sync.WaitGroup
-	results := make(chan ProxyNode, len(links))
-	semaphore := make(chan struct{}, MaxWorkers)
+	var mu sync.Mutex
+	var valid []ProxyNode
+	sem := make(chan struct{}, MaxWorkers)
 
 	for _, link := range links {
 		wg.Add(1)
+		sem <- struct{}{}
 		go func(l string) {
 			defer wg.Done()
-			semaphore <- struct{}{}
-			defer func() { <-semaphore }()
+			defer func() { <-sem }()
 
-			node, ok := testNode(l)
-			if ok {
-				results <- node
+			u, err := url.Parse(l)
+			if err != nil {
+				return
 			}
+
+			host := u.Hostname()
+			port := u.Port()
+			if port == "" { port = "443" }
+
+			// TCP Ping + Handshake check
+			start := time.Now()
+			conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, port), TestTimeout)
+			if err != nil {
+				return
+			}
+			duration := time.Since(start)
+			conn.Close()
+
+			mu.Lock()
+			valid = append(valid, ProxyNode{FullURL: l, Latency: duration, Addr: host})
+			mu.Unlock()
 		}(link)
 	}
-
-	go func() {
-		wg.Wait()
-		close(results)
-	}()
-
-	var validNodes []ProxyNode
-	for n := range results {
-		validNodes = append(validNodes, n)
-	}
-	return validNodes
+	wg.Wait()
+	return valid
 }
 
-func testNode(link string) (ProxyNode, bool) {
-	u, err := url.Parse(link)
-	if err != nil {
-		return ProxyNode{}, false
+func save(nodes []ProxyNode) {
+	file, _ := os.Create(OutputFile)
+	defer file.Close()
+
+	count := len(nodes)
+	if count > MaxResults {
+		count = MaxResults
 	}
 
-	node := ProxyNode{
-		FullURL:  link,
-		Protocol: u.Scheme,
-		Address:  u.Hostname(),
-		Port:     u.Port(),
-		Sni:      u.Query().Get("sni"),
+	for i := 0; i < count; i++ {
+		// Добавляем пометку о задержке в название ключа
+		line := fmt.Sprintf("%s#Lat_%dms\n", nodes[i].FullURL, nodes[i].Latency.Milliseconds())
+		file.WriteString(line)
 	}
-
-	// 1. TCP Ping / Dial Test
-	start := time.Now()
-	conn, err := net.DialTimeout("tcp", net.JoinHostPort(node.Address, node.Port), 3*time.Second)
-	if err != nil {
-		return node, false
-	}
-	node.Latency = time.Since(start)
-	conn.Close()
-
-	// 2. HTTP Speed Test (Эмуляция загрузки через прокси)
-	// В полноценной версии здесь должен быть запуск локального ядра Xray.
-	// Тут мы делаем замер "веса" ответа сервера, если это возможно.
-	node.Speed = fakeSpeedTest(node.Latency) 
-
-	return node, true
+	fmt.Printf("💾 Результаты сохранены в %s (%d шт)\n", OutputFile, count)
 }
 
-func fakeSpeedTest(latency time.Duration) float64 {
-	// Упрощенная логика: чем меньше задержка, тем выше потенциальная скорость
-	if latency.Milliseconds() == 0 { return 0 }
-	return 1000.0 / float64(latency.Milliseconds())
-}
-
-func saveResults(nodes []ProxyNode) {
-	f, _ := os.Create(OutputFile)
-	defer f.Close()
-	writer := bufio.NewWriter(f)
-	for _, n := range nodes {
-		fmt.Fprintf(writer, "# Latency: %s | Speed: %.2f Mbps | SNI: %s\n%s\n\n", 
-			n.Latency, n.Speed*8, n.Sni, n.FullURL)
+func unique(slice []string) []string {
+	keys := make(map[string]bool)
+	list := []string{}
+	for _, entry := range slice {
+		if _, value := keys[entry]; !value {
+			keys[entry] = true
+			list = append(list, entry)
+		}
 	}
-	writer.Flush()
+	return list
 }

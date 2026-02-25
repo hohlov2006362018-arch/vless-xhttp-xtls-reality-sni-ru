@@ -18,13 +18,12 @@ import (
 
 // --- КОНФИГУРАЦИЯ ---
 const (
-	MaxWorkers   = 100              // Увеличил для скорости
-	MaxResults   = 250              // Лимит по требованию
-	TestTimeout  = 7 * time.Second  // Время на проверку одного узла
+	MaxWorkers   = 120              // Максимальная многопоточность
+	MaxResults   = 250              // Лимит серверов в итоговом файле
+	TestTimeout  = 5 * time.Second  // Быстрый таймаут для отсева медленных узлов
 	OutputFile   = "best_ru_cidr_xhttp_reality.txt"
 )
 
-// Источники (твои + проверенные мега-агрегаторы)
 var sources = []string{
 	"https://raw.githubusercontent.com/Danialsamadi/v2go/main/AllConfigsSub.txt",
 	"https://raw.githubusercontent.com/barry-far/V2ray-config/main/All_Configs_Sub.txt",
@@ -58,93 +57,87 @@ var sources = []string{
 type ProxyNode struct {
 	FullURL string
 	Latency time.Duration
-	Addr    string
 }
 
 func main() {
-	fmt.Println("🌟 [START] Ultimate VPN Parser (Reality + XHTTP Edition)")
+	fmt.Println("🚀 СТАРТ: Поиск VLESS + XHTTP + Reality (Russia Optimized)")
 	
-	// 1. Извлечение
-	allLinks := collectAndDecode()
-	uniqueLinks := unique(allLinks)
-	fmt.Printf("🔍 Всего найдено уникальных ссылок: %d\n", len(uniqueLinks))
+	rawLinks := collectLinks()
+	fmt.Printf("📦 Найдено ссылок: %d\n", len(rawLinks))
 
-	// 2. Глубокая фильтрация
-	targetLinks := filterStrict(uniqueLinks)
-	fmt.Printf("🎯 Соответствуют критериям (Reality/XHTTP): %d\n", len(targetLinks))
+	filtered := filterRealityXHTTP(rawLinks)
+	fmt.Printf("🎯 Соответствуют критериям: %d\n", len(filtered))
 
-	// 3. Многопоточный тест
-	bestNodes := validate(targetLinks)
-
-	// 4. Сортировка
-	sort.Slice(bestNodes, func(i, j int) bool {
-		return bestNodes[i].Latency < bestNodes[j].Latency
+	validNodes := testNodes(filtered)
+	
+	sort.Slice(validNodes, func(i, j int) bool {
+		return validNodes[i].Latency < validNodes[j].Latency
 	})
 
-	// 5. Сохранение
-	save(bestNodes)
+	saveResults(validNodes)
 }
 
-func collectAndDecode() []string {
+func collectLinks() []string {
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	var results []string
-	client := &http.Client{Timeout: 15 * time.Second}
+	client := &http.Client{Timeout: 10 * time.Second}
 
-	for _, urlLink := range sources {
+	for _, s := range sources {
 		wg.Add(1)
-		go func(s string) {
+		go func(urlStr string) {
 			defer wg.Done()
-			resp, err := client.Get(s)
+			resp, err := client.Get(urlStr)
 			if err != nil {
 				return
 			}
 			defer resp.Body.Close()
 			body, _ := io.ReadAll(resp.Body)
+			
 			content := string(body)
-
-			// Если контент в Base64 (часто для V2Ray подписок)
-			if decoded, err := base64.StdEncoding.DecodeString(content); err == nil {
-				content = string(decoded)
+			// Декодирование base64 если нужно
+			if !strings.Contains(content, "vless://") {
+				if dec, err := base64.StdEncoding.DecodeString(content); err == nil {
+					content = string(dec)
+				}
 			}
 
 			re := regexp.MustCompile(`vless://[^\s#\x60"']+`)
 			matches := re.FindAllString(content, -1)
-
+			
 			mu.Lock()
 			results = append(results, matches...)
 			mu.Unlock()
-		}(urlLink)
+		}(s)
 	}
 	wg.Wait()
 	return results
 }
 
-func filterStrict(links []string) []string {
-	var filtered []string
+func filterRealityXHTTP(links []string) []string {
+	var result []string
+	set := make(map[string]struct{})
+
 	for _, link := range links {
 		l := strings.ToLower(link)
-		// Условие: REALITY обязателен
-		isReality := strings.Contains(l, "security=reality")
-		// Условие: XHTTP или HTTP-Upgrade (актуально для обхода ТСПУ)
-		isXHTTP := strings.Contains(l, "type=xhttp") || strings.Contains(l, "type=http") || strings.Contains(l, "type=h2")
-		
-		if isReality && isXHTTP {
-			filtered = append(filtered, link)
-		}
-	}
-	// Если XHTTP результатов слишком мало, добавим просто Reality (для стабильности)
-	if len(filtered) < 10 {
-		for _, link := range links {
-			if strings.Contains(strings.ToLower(link), "security=reality") {
-				filtered = append(filtered, link)
+		// Фильтр: Reality ОБЯЗАТЕЛЬНО + XHTTP/HTTP (для обхода замедлений ТСПУ)
+		if strings.Contains(l, "security=reality") {
+			// Проверяем на XHTTP или наличие RU SNI
+			isXHTTP := strings.Contains(l, "type=xhttp") || strings.Contains(l, "type=http")
+			isRUSNI := strings.Contains(l, ".ru") || strings.Contains(l, "vk.com") || strings.Contains(l, "yandex")
+
+			if isXHTTP || isRUSNI {
+				if _, ok := set[link]; !ok {
+					set[link] = struct{}{}
+					result = append(result, link)
+				}
 			}
 		}
 	}
-	return filtered
+	return result
 }
 
-func validate(links []string) []ProxyNode {
+func testNodes(links []string) []ProxyNode {
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	var valid []ProxyNode
@@ -162,21 +155,20 @@ func validate(links []string) []ProxyNode {
 				return
 			}
 
-			host := u.Hostname()
-			port := u.Port()
-			if port == "" { port = "443" }
+			addr := net.JoinHostPort(u.Hostname(), u.Port())
+			if u.Port() == "" { addr = u.Hostname() + ":443" }
 
-			// TCP Ping + Handshake check
 			start := time.Now()
-			conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, port), TestTimeout)
+			// TCP Ping (Handshake check)
+			conn, err := net.DialTimeout("tcp", addr, TestTimeout)
 			if err != nil {
 				return
 			}
-			duration := time.Since(start)
+			latency := time.Since(start)
 			conn.Close()
 
 			mu.Lock()
-			valid = append(valid, ProxyNode{FullURL: l, Latency: duration, Addr: host})
+			valid = append(valid, ProxyNode{FullURL: l, Latency: latency})
 			mu.Unlock()
 		}(link)
 	}
@@ -184,31 +176,26 @@ func validate(links []string) []ProxyNode {
 	return valid
 }
 
-func save(nodes []ProxyNode) {
-	file, _ := os.Create(OutputFile)
-	defer file.Close()
+func saveResults(nodes []ProxyNode) {
+	f, err := os.Create(OutputFile)
+	if err != nil {
+		return
+	}
+	defer f.Close()
 
-	count := len(nodes)
-	if count > MaxResults {
-		count = MaxResults
+	// Используем bufio для эффективной записи
+	writer := bufio.NewWriter(f)
+	
+	limit := len(nodes)
+	if limit > MaxResults {
+		limit = MaxResults
 	}
 
-	for i := 0; i < count; i++ {
-		// Добавляем пометку о задержке в название ключа
-		line := fmt.Sprintf("%s#Lat_%dms\n", nodes[i].FullURL, nodes[i].Latency.Milliseconds())
-		file.WriteString(line)
+	for i := 0; i < limit; i++ {
+		// Форматируем вывод: Ссылка + Комментарий с пингом
+		entry := fmt.Sprintf("%s#Lat_%dms\n", nodes[i].FullURL, nodes[i].Latency.Milliseconds())
+		writer.WriteString(entry)
 	}
-	fmt.Printf("💾 Результаты сохранены в %s (%d шт)\n", OutputFile, count)
-}
-
-func unique(slice []string) []string {
-	keys := make(map[string]bool)
-	list := []string{}
-	for _, entry := range slice {
-		if _, value := keys[entry]; !value {
-			keys[entry] = true
-			list = append(list, entry)
-		}
-	}
-	return list
+	writer.Flush()
+	fmt.Printf("✅ Успешно сохранено %d узлов в %s\n", limit, OutputFile)
 }

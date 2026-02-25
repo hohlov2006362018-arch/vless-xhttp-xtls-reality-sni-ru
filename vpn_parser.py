@@ -11,7 +11,7 @@ from datetime import datetime
 
 # --- НАСТРОЙКИ ---
 MAX_CONNECTIONS = 500  # Кол-во одновременных потоков (идеально для GitHub Actions)
-TIMEOUT = 3.0          # Таймаут (секунды) для пинга и DNS-резолва
+TIMEOUT = 5.0          # Таймаут (секунды) для пинга и DNS-резолва
 TOP_N = 750            # Лимит лучших серверов в финальном файле
 
 # Фильтры
@@ -57,7 +57,7 @@ def load_ru_cidrs():
     """ Скачивает свежую базу подсетей РФ и строит Interval Tree для сверхбыстрого бинарного поиска """
     print("[*] Загрузка актуальных RU CIDR баз для фильтрации SNI...")
     try:
-        r = requests.get("https://raw.githubusercontent.com/herrbischoff/country-ip-blocks/master/ipv4/ru.cidr", timeout=15)
+        r = requests.get("https://raw.githubusercontent.com/hxehex/russia-mobile-internet-whitelist/refs/heads/main/ipwhitelist.txt", timeout=15)
         ranges = []
         for line in r.text.splitlines():
             line = line.strip()
@@ -267,5 +267,6 @@ if __name__ == "__main__":
         # Если это GitHub Actions / Ubuntu консоль - используем стандартный запуск
 
         asyncio.run(main())
+
 
 

@@ -4,19 +4,17 @@ import base64
 import urllib.parse
 import time
 import re
-import ipaddress
-import logging
-import platform
 import os
 import zipfile
 import json
-import math
+import platform
+import logging
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Топовые источники (здесь сотни тысяч ключей)
+# Топовые источники (Сотни тысяч ключей)
 SOURCES =[
     "https://raw.githubusercontent.com/Danialsamadi/v2go/main/AllConfigsSub.txt",
     "https://raw.githubusercontent.com/barry-far/V2ray-config/main/All_Configs_Sub.txt",
@@ -42,19 +40,16 @@ SOURCES =[
     "https://raw.githubusercontent.com/pawdroid/Free-servers/main/sub"
 ]
 
-MAX_PROXIES = 500  # Выводим 500 лучших из 100 000+
-OUTPUT_FILE = "best_ru_cidr_xhttp_reality.txt"
-CONCURRENT_XRAY = 60 # 60 параллельных ядер Xray (чтобы не перегрузить GitHub Runner)
-CONCURRENT_PING = 1000 # Параллельные TCP пинги (выдержит легко)
+OUTPUT_FILE = "best_ru_cidr_xhttp_reality.txt" # Оставили имя чтобы не менять YML в Actions
+CONCURRENT_XRAY = 80    # 80 ядер Xray одновременно
+CONCURRENT_PING = 1500  # 1500 потоков пинга
 
-# Глобальные переменные для прогресс-бара
 deep_test_total = 0
 deep_test_done = 0
 
 async def get_xray_binary():
     system = platform.system().lower()
     binary_name = "xray.exe" if system == "windows" else "xray"
-
     if os.path.exists(binary_name): return f"./{binary_name}" if system != "windows" else binary_name
 
     logger.info("Скачивание актуального Xray-core...")
@@ -70,161 +65,142 @@ async def get_xray_binary():
     if system != "windows": os.chmod(binary_name, 0o755)
     return f"./{binary_name}" if system != "windows" else binary_name
 
-def decode_base64_if_needed(content: str) -> str:
-    content = content.strip()
-    if not content: return ""
-    if "://" in content[:50]: return content
+def b64_decode(text: str) -> str:
     try:
-        padded = content + "=" * ((4 - len(content) % 4) % 4)
+        padded = text + "=" * ((4 - len(text) % 4) % 4)
         return base64.b64decode(padded).decode('utf-8', errors='ignore')
-    except: return content
+    except: return text
 
-def is_valid_ip_or_cidr(host: str) -> bool:
-    try:
-        ipaddress.ip_address(host)
-        return True
-    except ValueError:
-        return False
-
-def parse_and_filter_vless_reality(link: str) -> dict:
+def universal_proxy_parser(link: str) -> dict:
+    """Парсит АБСОЛЮТНО ЛЮБЫЕ ссылки (VLESS, VMESS, TROJAN, SS) и готовит их Xray-json конфиги"""
     link = link.strip()
-    if not link.startswith("vless://"): return None
+    if not link: return None
     
-    base_link = link.split('#')[0]
     try:
-        parsed = urllib.parse.urlsplit(base_link)
-        query = urllib.parse.parse_qs(parsed.query)
-        uuid_host = parsed.netloc
-        if '@' not in uuid_host: return None
-        
-        uuid, host_port = uuid_host.split('@', 1)
-        host, port = host_port.rsplit(':', 1)
+        # ---- VMESS ----
+        if link.startswith("vmess://"):
+            data = json.loads(b64_decode(link[8:]))
+            host = data.get("add")
+            port = int(data.get("port"))
+            outbound = {
+                "protocol": "vmess",
+                "settings": {"vnext":[{"address": host, "port": port, "users":[{"id": data.get("id"), "alterId": int(data.get("aid", 0))}]}]},
+                "streamSettings": {"network": data.get("net", "tcp"), "security": data.get("tls", "none")}
+            }
+            net = data.get("net", "tcp")
+            if net == "ws": outbound["streamSettings"]["wsSettings"] = {"path": data.get("path", "/"), "headers": {"Host": data.get("host", "")}}
+            elif net == "grpc": outbound["streamSettings"]["grpcSettings"] = {"serviceName": data.get("path", "")}
+            if data.get("sni"): outbound["streamSettings"]["tlsSettings"] = {"serverName": data.get("sni")}
+            
+            return {"link": link, "host": host, "port": port, "proto": "VMess", "type": net, "xray_outbound": outbound, "name": data.get("ps", "VMess"), "tcp_ping": 9999.0, "latency": 9999.0, "speed_mbps": 0.0}
 
-        # Жестко требуем только Reality (обход ТСПУ 100%)
-        if query.get('security', [''])[0].lower() != 'reality': return None
-        
-        # Только современные протоколы трафика
-        transport = query.get('type', ['tcp'])[0].lower()
-        if transport not in['tcp', 'grpc', 'ws', 'xhttp', 'splithttp']: return None
-        
-        # ОЧЕНЬ ВАЖНО: Только голые IP адреса. Если хост домен - DPI может заблочить DNS. IP-шники работают как лом!
-        if not is_valid_ip_or_cidr(host): return None
+        # ---- VLESS & TROJAN ----
+        elif link.startswith("vless://") or link.startswith("trojan://"):
+            proto = link.split("://")[0]
+            base, query = (link.split("?", 1) + [""])[:2]
+            base, name = (base.split("#", 1) + [""])[:2]
+            auth, host_port = base.split("://")[1].split("@", 1)
+            host, port = host_port.rsplit(":", 1)
+            port = int(port)
+            q = dict(urllib.parse.parse_qsl(query))
+            
+            outbound = {"protocol": proto, "settings": {}, "streamSettings": {"network": q.get("type", "tcp"), "security": q.get("security", "none")}}
+            if proto == "vless": outbound["settings"]["vnext"] =[{"address": host, "port": port, "users": [{"id": auth, "encryption": q.get("encryption", "none")}]}]
+            else: outbound["settings"]["servers"] =[{"address": host, "port": port, "password": auth}]
+                
+            net = q.get("type", "tcp")
+            if net == "ws": outbound["streamSettings"]["wsSettings"] = {"path": q.get("path", "/"), "headers": {"Host": q.get("host", q.get("sni", ""))}}
+            elif net in["xhttp", "splithttp"]: outbound["streamSettings"][f"{net}Settings"] = {"path": q.get("path", "/"), "host": q.get("host", "")}
+            elif net == "grpc": outbound["streamSettings"]["grpcSettings"] = {"serviceName": q.get("serviceName", ""), "multiMode": q.get("mode", "multi") != "gun"}
+            
+            if q.get("security") == "reality":
+                outbound["streamSettings"]["realitySettings"] = {"serverName": q.get("sni", ""), "publicKey": q.get("pbk", ""), "shortId": q.get("sid", ""), "fingerprint": q.get("fp", "chrome")}
+            elif q.get("security") == "tls":
+                outbound["streamSettings"]["tlsSettings"] = {"serverName": q.get("sni", ""), "fingerprint": q.get("fp", "chrome")}
+                
+            return {"link": link, "host": host, "port": port, "proto": proto.capitalize(), "type": net, "xray_outbound": outbound, "name": urllib.parse.unquote(name), "tcp_ping": 9999.0, "latency": 9999.0, "speed_mbps": 0.0}
 
-        return {
-            "link": link,
-            "uuid": uuid,
-            "host": host,
-            "port": int(port),
-            "type": transport,
-            "security": "reality",
-            "sni": query.get('sni', [''])[0],
-            "pbk": query.get('pbk', [''])[0],
-            "sid": query.get('sid', [''])[0],
-            "fp": query.get('fp', ['chrome'])[0],
-            "path": query.get('path', ['/'])[0],
-            "host_http": query.get('host', [''])[0],
-            "serviceName": query.get('serviceName', [''])[0],
-            "mode": query.get('mode', ['multi'])[0],
-            "tcp_ping": 9999.0,
-            "latency": 9999.0,
-            "speed_mbps": 0.0
-        }
+        # ---- SHADOWSOCKS ----
+        elif link.startswith("ss://"):
+            base, name = (link.split("#", 1) + [""])[:2]
+            base = base[5:]
+            if "@" in base:
+                b64, host_port = base.split("@", 1)
+                host, port = host_port.rsplit(":", 1)
+                method, password = b64_decode(b64).split(":", 1)
+            else:
+                method_pass, host_port = b64_decode(base).split("@", 1)
+                method, password = method_pass.split(":", 1)
+                host, port = host_port.rsplit(":", 1)
+                
+            outbound = {"protocol": "shadowsocks", "settings": {"servers":[{"address": host, "port": int(port), "method": method, "password": password}]}}
+            return {"link": link, "host": host, "port": int(port), "proto": "ShadowSocks", "type": "tcp", "xray_outbound": outbound, "name": urllib.parse.unquote(name), "tcp_ping": 9999.0, "latency": 9999.0, "speed_mbps": 0.0}
+
     except Exception: return None
+    return None
 
 async def fetch_source(session: aiohttp.ClientSession, url: str) -> list:
     try:
-        async with session.get(url, timeout=15) as response:
+        async with session.get(url, timeout=12) as response:
             if response.status == 200:
                 text = await response.text()
-                return decode_base64_if_needed(text).split('\n')
+                # Пытаемся раскодировать если это Base64 список
+                if not "://" in text[:50]: text = b64_decode(text)
+                return text.split('\n')
     except: pass
     return[]
 
 async def raw_tcp_ping(proxy: dict, semaphore: asyncio.Semaphore):
-    """ФАЗА 1: Мгновенная проверка. Сканируем миллисекунды для тысяч узлов."""
+    """ФАЗА 1: Мгновенный отсев 90% нерабочего шлака через TCP Socket"""
     async with semaphore:
         start_time = time.monotonic()
         try:
             future = asyncio.open_connection(proxy["host"], proxy["port"])
-            reader, writer = await asyncio.wait_for(future, timeout=3.0)
+            reader, writer = await asyncio.wait_for(future, timeout=2.5) # Жесткий таймаут 2.5 сек
             proxy["tcp_ping"] = (time.monotonic() - start_time) * 1000
             writer.close()
             await writer.wait_closed()
-        except:
-            proxy["tcp_ping"] = 9999.0
+        except: pass
 
 async def test_proxy_with_xray(proxy: dict, port_queue: asyncio.Queue, xray_bin: str):
-    """ФАЗА 2: Глубокая проверка в реальном ядре на обрыв трафика / EOF"""
+    """ФАЗА 2: Глубокий URL и Speed тест через ядро Xray - ТОЛЬКО ХАРДКОР"""
     global deep_test_done, deep_test_total
     
     local_port = await port_queue.get()
     config_path = f"config_{local_port}.json"
-    net_type = proxy['type']
     proc = None
 
     try:
-        stream_settings = {
-            "network": net_type,
-            "security": "reality",
-            "realitySettings": {
-                "serverName": proxy['sni'], "publicKey": proxy['pbk'], 
-                "shortId": proxy['sid'], "fingerprint": proxy['fp']
-            }
-        }
-
-        # Блоки настроек для мультитестности
-        if net_type in['xhttp', 'splithttp']:
-            stream_settings[f"{net_type}Settings"] = {"path": urllib.parse.unquote(proxy['path'])}
-            if proxy.get('host_http'): stream_settings[f"{net_type}Settings"]["host"] = proxy['host_http']
-        elif net_type == 'grpc':
-            stream_settings["grpcSettings"] = {
-                "serviceName": urllib.parse.unquote(proxy['serviceName']),
-                "multiMode": proxy['mode'] != 'gun'
-            }
-        elif net_type == 'ws':
-            stream_settings["wsSettings"] = {
-                "path": urllib.parse.unquote(proxy['path']),
-                "headers": {"Host": proxy.get('host_http', proxy['sni'])}
-            }
-            
         config = {
             "log": {"loglevel": "none"},
             "inbounds":[{"port": local_port, "listen": "127.0.0.1", "protocol": "http"}],
-            "outbounds":[{
-                "protocol": "vless",
-                "settings": {"vnext": [{"address": proxy['host'], "port": proxy['port'], 
-                                        "users": [{"id": proxy['uuid'], "encryption": "none", "flow": ""}]}]},
-                "streamSettings": stream_settings
-            }]
+            "outbounds":[proxy["xray_outbound"]]
         }
-
         with open(config_path, 'w', encoding='utf-8') as f: json.dump(config, f)
 
         proc = await asyncio.create_subprocess_exec(
             xray_bin, 'run', '-c', config_path,
             stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL
         )
-        await asyncio.sleep(1.0) # Ожидание инициализации Xray
+        await asyncio.sleep(1.0) # Ожидание поднятия порта
         
         proxy_url = f"http://127.0.0.1:{local_port}"
         connector = aiohttp.TCPConnector(ssl=False)
         async with aiohttp.ClientSession(connector=connector) as session:
-            # 1. URL test
+            # ТЕСТ 1: ЖИВОЙ ЛИ ТРАФИК? (URL TEST)
             start = time.monotonic()
             async with session.get('http://cp.cloudflare.com/generate_204', proxy=proxy_url, timeout=5.0) as resp:
                 if resp.status not in (200, 204): raise Exception("EOF/Bad Ping")
             proxy['latency'] = int((time.monotonic() - start) * 1000)
             
-            # 2. Xray Speed/Download (качаем мегабайт - отбрасываем ложные узлы)
+            # ТЕСТ 2: КАЧАЕМ 500КБ ФАЙЛ С CLOUDFLARE (ОТСЕКАЕМ БЛОКИРОВКИ)
             start_down = time.monotonic()
-            async with session.get('https://speed.cloudflare.com/__down?bytes=1500000', proxy=proxy_url, timeout=10.0) as resp:
+            async with session.get('https://speed.cloudflare.com/__down?bytes=500000', proxy=proxy_url, timeout=7.0) as resp:
                 content = await resp.read()
                 dl_time = time.monotonic() - start_down
                 proxy['speed_mbps'] = round((len(content) * 8 / 1000000) / dl_time, 2)
                 
-    except Exception:
-        proxy['latency'] = 9999.0
-        proxy['speed_mbps'] = 0.0
+    except Exception: pass
     finally:
         if proc:
             try: proc.kill()
@@ -234,21 +210,18 @@ async def test_proxy_with_xray(proxy: dict, port_queue: asyncio.Queue, xray_bin:
             except: pass
         await port_queue.put(local_port)
         
-        # Красивый логинг прогресса глубокого сканирования (чтобы лог не зависал)
+        # Логируем каждые 50 проверенных узлов чтобы видеть прогресс!
         deep_test_done += 1
-        if deep_test_done % 100 == 0 or deep_test_done == deep_test_total:
-            logger.info(f"Прогресс глубокого Xray-теста: {deep_test_done} из {deep_test_total} узлов...")
+        if deep_test_done % 50 == 0 or deep_test_done == deep_test_total:
+            logger.info(f"⚡ Глубокая Xray Проверка: {deep_test_done} из {deep_test_total} серверов пройдена...")
 
 async def main():
     global deep_test_total, deep_test_done
-    
-    logger.info("Запуск Абсолютного VPN-парсера. Никаких лимитов. МЯСОРУБКА АКТИВИРОВАНА.")
+    logger.info("🔥 ЗАПУСК АБСОЛЮТНОГО ПАРСЕРА БЕЗ ЛИМИТОВ 🔥")
     xray_bin = await get_xray_binary()
     
-    # 1. Сбор всех доступных прокси из интернета
+    # 1. Скачиваем весь интернет (все подписки)
     all_raw_lines = set()
-
-    # Оптимизация aiohttp для парсинга тысяч ссылок (если их добавится больше)
     connector = aiohttp.TCPConnector(limit=0)
     async with aiohttp.ClientSession(connector=connector) as session:
         tasks =[fetch_source(session, url) for url in SOURCES]
@@ -256,70 +229,63 @@ async def main():
         for sublist in results:
             for line in sublist: all_raw_lines.add(line.strip())
                 
-    logger.info(f"Собрано сырых конфигов (Всего во всем интернете): {len(all_raw_lines)}")
+    logger.info(f"Собрано сырых ссылок из всех источников: {len(all_raw_lines)}")
 
     unique_map = {}
     for line in all_raw_lines:
-        parsed = parse_and_filter_vless_reality(line)
+        parsed = universal_proxy_parser(line)
         if parsed:
-            # Дедупликация точная (IP:PORT)
+            # Дедупликация (не проверяем одни и те же сервера дважды)
             key = f"{parsed['host']}:{parsed['port']}"
             if key not in unique_map: unique_map[key] = parsed
 
     valid_proxies = list(unique_map.values())
-    logger.info(f"Отфильтровано чистых IP с VLESS+Reality: {len(valid_proxies)} шт.")
+    logger.info(f"Успешно конвертировано в Xray Json: {len(valid_proxies)} уникальных серверов (VLESS/VMESS/Trojan/SS).")
 
-    # ФАЗА 1: Массовый TCP-пинг. Пропускаем через него ВООБЩЕ ВСЕ IP-шники.
+    # ФАЗА 1: Массовый TCP Пинг всех 10-100К серверов!
     if valid_proxies:
-        logger.info(f"ФАЗА 1: Мгновенный TCP-сканер (пробиваем все {len(valid_proxies)} портов)...")
+        logger.info(f"ФАЗА 1: Мгновенная TCP-Атака (Ищем живые порты средь {len(valid_proxies)} узлов)...")
         sem = asyncio.Semaphore(CONCURRENT_PING)
         await asyncio.gather(*[raw_tcp_ping(p, sem) for p in valid_proxies])
         
-        # Берем ВСЕ живые (никаких лимитов вроде top 300!)
+        # БЕРЕМ ВСЕ ЖИВЫЕ (Никаких лимитов)
         tcp_alive =[p for p in valid_proxies if p["tcp_ping"] < 9999.0]
-        
         deep_test_total = len(tcp_alive)
         deep_test_done = 0
         
-        logger.info(f"Доступны физически: {deep_test_total} серверов. Передаем их ВСЕХ на Xray ФАЗУ-2!")
+        logger.info(f"✅ Физически в сети: {deep_test_total} серверов. НАЧИНАЮ XRAY SPEEDTEST ДЛЯ КАЖДОГО ИЗ НИХ!")
 
-        # ФАЗА 2: Глубокий тест ВСЕХ выживших узлов (100% обход EOF и блокировок РКН)
+        # ФАЗА 2: Прогоняем ВЕСЬ живой список через Xray-URL-Speedtest
         if tcp_alive:
             port_queue = asyncio.Queue()
             for p in range(20000, 20000 + CONCURRENT_XRAY): port_queue.put_nowait(p)
                 
             await asyncio.gather(*[test_proxy_with_xray(p, port_queue, xray_bin) for p in tcp_alive])
 
-            # Вывод финальной элиты
-            real_alive =[p for p in tcp_alive if p["latency"] < 9999.0]
-            # Сортировка: сначала самые быстрые по пингу, при равенстве пинга - самые скоростные
+            # ЭЛИТА: Только те, кто скачал файл без EOF
+            real_alive = [p for p in tcp_alive if p["latency"] < 9999.0]
+            
+            # Сортировка по Пингу (сначала самые быстрые)
             real_alive.sort(key=lambda x: (x["latency"], -x["speed_mbps"]))
             
-            best_proxies = real_alive[:MAX_PROXIES]
-            
-            logger.info(f"АБСОЛЮТНО живых серверов после мясорубки: {len(real_alive)}.")
-            logger.info(f"Сохраняем ТОП-{len(best_proxies)} самых скоростных в файл.")
+            logger.info(f"🏆 Абсолютно живых, пробивающих блокировку серверов: {len(real_alive)} !!")
             
             with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
-                for node in best_proxies:
+                for node in real_alive:  # БЕЗ ЛИМИТОВ MAX_PROXIES!
                     base = node["link"].split('#')[0]
-                    name_old = f"Proxy {node['host']}"
-                    if '#' in node["link"]:
-                        name_old = urllib.parse.unquote(node["link"].split('#', 1)[1])
-                        name_old = re.sub(r'^\[.*?\]\s*', '', name_old)
+                    name_old = node["name"]
+                    name_old = re.sub(r'^\[.*?\]\s*', '', name_old) # Стираем старые теги скоростей
+                    if not name_old: name_old = f"Proxy {node['host']}"
                         
-                    transport_icon = {"tcp": "TCP", "grpc": "gRPC", "ws": "WS", "xhttp": "XHTTP", "splithttp": "XHTTP"}.get(node['type'], node['type'])
-
-                    # Прописываем метку скорости сразу в название профиля
-                    # Пример: [142ms|19.5мб/c] TCP Reality | Старое Имя
-                    new_name = urllib.parse.quote(f"[{node['latency']}ms|{node['speed_mbps']}мб/c] {transport_icon} Reality | {name_old}")
+                    transport = {"tcp": "TCP", "grpc": "gRPC", "ws": "WS", "xhttp": "XHTTP", "splithttp": "XHTTP"}.get(node['type'], node['type'])
+                    
+                    # Генерируем красивое название: [142ms|19мб/с] Vless TCP | Name
+                    new_name = urllib.parse.quote(f"[{node['latency']}ms|{node['speed_mbps']}мб/c] {node['proto']} {transport} | {name_old}")
                     f.write(f"{base}#{new_name}\n")
                     
-            logger.info(f"Успешно завершено! Файл {OUTPUT_FILE} готов.")
-        else:
-            logger.warning("Все сервера мертвы. Такое редко бывает.")
-    else:
-        logger.warning("Не найдено серверов на старте.")
+            logger.info(f"🔥 УСПЕХ! ВЕСЬ безграничный список сохранен в {OUTPUT_FILE}!")
+        else: logger.warning("В интернете не найдено ни одного живого IP. Мясорубка остановлена.")
+    else: logger.warning("Парсер не нашел ни одной поддерживаемой ссылки.")
 
 if __name__ == "__main__":
     if platform.system() == "Windows": asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())

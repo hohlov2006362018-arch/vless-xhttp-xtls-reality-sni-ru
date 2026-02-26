@@ -1,0 +1,36 @@
+name: 🚀 Auto VPN Parser Xray
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'  # Запускать каждые 6 часов автоматически
+  workflow_dispatch:       # Ручной запуск через кнопку в GitHub
+
+jobs:
+  run-parser:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install aiohttp
+
+      - name: Run VPN Parser
+        run: python vpn_parser.py
+
+      - name: Commit and Push Subscriptions
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add best_ru_cidr_xhttp_reality.txt
+          # Коммит выполнится только если файл best_ru_cidr_xhttp_reality.txt обновился
+          git commit -m "⚡ Обновлены топовые XHTTP Reality ключи" || echo "No changes to commit"
+          git push

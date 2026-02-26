@@ -6,12 +6,15 @@ import time
 import re
 import ipaddress
 import logging
+import platform
+import os
+import zipfile
 
-# Настройка логирования для красивого вывода в GitHub Actions
+# Настройка красивого вывода
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Источники подписок (Sub links)
+# Источники
 SOURCES =[
     "https://raw.githubusercontent.com/Danialsamadi/v2go/main/AllConfigsSub.txt",
     "https://raw.githubusercontent.com/barry-far/V2ray-config/main/All_Configs_Sub.txt",
@@ -44,22 +47,45 @@ SOURCES =[
 
 MAX_PROXIES = 250
 OUTPUT_FILE = "best_ru_cidr_xhttp_reality.txt"
-TCP_TIMEOUT_SECONDS = 3.0
+CONCURRENT_TESTS = 30 # Количество одновременно тестируемых серверов
+
+async def get_xray_binary():
+    """Скачивает Xray-core для полноценной симуляции клиента прямо в парсере."""
+    system = platform.system().lower()
+    binary_name = "xray.exe" if system == "windows" else "xray"
+
+    if os.path.exists(binary_name):
+        return f"./{binary_name}" if system != "windows" else binary_name
+
+    logger.info("Скачивание актуального Xray-core для глубокого тестирования скорости и трафика...")
+    
+    # Ссылка для Linux (GitHub Actions Runner)
+    url = "https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip"
+    if system == "windows":
+        url = "https://github.com/XTLS/Xray-core/releases/latest/download/Xray-windows-64.zip"
+
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as resp:
+            with open("xray.zip", "wb") as f:
+                f.write(await resp.read())
+                
+    with zipfile.ZipFile("xray.zip", 'r') as zip_ref:
+        zip_ref.extractall(".")
+        
+    if system != "windows":
+        os.chmod(binary_name, 0o755)
+        
+    return f"./{binary_name}" if system != "windows" else binary_name
 
 def decode_base64_if_needed(content: str) -> str:
-    """Умный декодер базы: проверяет, является ли строка Base64 списком, и декодирует его."""
     content = content.strip()
     if not content: return ""
-    # Если строка начинает выглядеть как стандарнтный протокол, это сырой текст
-    if "://" in content[:50]:
-        return content
+    if "://" in content[:50]: return content
     try:
-        # Добавляем паддинг, если его не хватает
         padded = content + "=" * ((4 - len(content) % 4) % 4)
-        result = base64.b64decode(padded).decode('utf-8')
-        return result
+        return base64.b64decode(padded).decode('utf-8', errors='ignore')
     except Exception:
-        return content # Возвращаем как есть, если это просто сырой текст
+        return content
 
 def is_valid_ip_or_cidr(host: str) -> bool:
     try:
@@ -69,85 +95,139 @@ def is_valid_ip_or_cidr(host: str) -> bool:
         return False
 
 def parse_and_filter_vless(link: str) -> dict:
-    """
-    Парсит конфигурацию и фильтрует по жестким критериям ТЗ:
-    VLESS + XHTTP + Reality + SNI: *.ru + Host: Valid IP (условие CIDR)
-    """
     link = link.strip()
     if not link.startswith("vless://"): return None
     
+    # Обрезаем имя заранее для устранения дублей IP
+    base_link = link.split('#')[0]
     try:
-        parsed = urllib.parse.urlsplit(link)
+        parsed = urllib.parse.urlsplit(base_link)
         query = urllib.parse.parse_qs(parsed.query)
+        uuid_host = parsed.netloc
+        if '@' not in uuid_host: return None
         
-        # Разбираем хост и порт
-        host_port = parsed.netloc.split('@')[-1]
-        if ':' in host_port:
-            host, port = host_port.rsplit(':', 1)
-        else:
-            return None
+        uuid, host_port = uuid_host.split('@', 1)
+        host, port = host_port.rsplit(':', 1)
 
-        # 1. Проверка XTLS Reality
-        if query.get('security', [''])[0].lower() != 'reality': 
-            return None
-            
-        # 2. Проверка XHTTP (или splithttp - новая номенклатура ядра)
+        if query.get('security', [''])[0].lower() != 'reality': return None
         transport = query.get('type', [''])[0].lower()
-        if transport not in ['xhttp', 'splithttp']:
-            return None
-            
-        # 3. Проверка SNI на принадлежность RU сегменту
+        if transport not in['xhttp', 'splithttp']: return None
+        
         sni = query.get('sni', [''])[0].lower()
-        if not (sni.endswith('.ru') or '.ru' in sni):
-            return None
-
-        # 4. Проверка CIDR / IP (Хост должен быть прямым IP-адресом, а не заблокированным доменом)
-        if not is_valid_ip_or_cidr(host):
-            return None
+        if not (sni.endswith('.ru') or '.ru' in sni): return None
+        if not is_valid_ip_or_cidr(host): return None
 
         return {
             "link": link,
+            "uuid": uuid,
             "host": host,
             "port": int(port),
-            "latency": 9999.0
+            "type": transport,
+            "sni": sni,
+            "pbk": query.get('pbk', [''])[0],
+            "sid": query.get('sid', [''])[0],
+            "fp": query.get('fp', ['chrome'])[0],
+            "path": query.get('path', ['/'])[0],
+            "host_http": query.get('host', [''])[0],
+            "latency": 9999.0,
+            "speed_mbps": 0.0
         }
     except Exception:
         return None
 
 async def fetch_source(session: aiohttp.ClientSession, url: str) -> list:
-    """Асинхронно скачивает источник и возвращает список ссылок на прокси."""
     try:
         async with session.get(url, timeout=10) as response:
             if response.status == 200:
                 text = await response.text()
-                text = decode_base64_if_needed(text)
-                return text.split('\n')
-    except Exception as e:
-        logger.debug(f"Ошибка при загрузке {url}: {e}")
+                return decode_base64_if_needed(text).split('\n')
+    except Exception:
+        pass
     return[]
 
-async def tcp_ping(proxy_data: dict, semaphore: asyncio.Semaphore):
-    """Делает максимально быстрый асинхронный TCP пинг узла для замера задержки."""
-    async with semaphore:
-        start_time = time.monotonic()
+import json
+async def test_proxy_with_xray(proxy: dict, port_queue: asyncio.Queue, xray_bin: str):
+    """Глубокий тест прокси: запуск локального ядра, тест TTFB, скачивание 1МБ (Имитация Speedtest)"""
+    local_port = await port_queue.get()
+    config_path = f"config_{local_port}.json"
+    
+    # 1. Формируем чистый конфиг для Xray
+    config = {
+        "log": {"loglevel": "none"},
+        "inbounds":[{"port": local_port, "listen": "127.0.0.1", "protocol": "http"}],
+        "outbounds":[{
+            "protocol": "vless",
+            "settings": {"vnext": [{"address": proxy['host'], "port": proxy['port'], 
+                                    "users": [{"id": proxy['uuid'], "encryption": "none", "flow": ""}]}]},
+            "streamSettings": {
+                "network": "xhttp", # Приводим к стандарту свежего ядра
+                "security": proxy['security'],
+                "realitySettings": {"serverName": proxy['sni'], "publicKey": proxy['pbk'], 
+                                    "shortId": proxy['sid'], "fingerprint": proxy['fp']},
+                "xhttpSettings": {"path": urllib.parse.unquote(proxy['path'])}
+            }
+        }]
+    }
+    if proxy.get('host_http'):
+        config["outbounds"][0]["streamSettings"]["xhttpSettings"]["host"] = proxy['host_http']
+
+    with open(config_path, 'w', encoding='utf-8') as f:
+        json.dump(config, f)
+
+    # 2. Запускаем изолированный процесс туннеля
+    proc = await asyncio.create_subprocess_exec(
+        xray_bin, '-c', config_path,
+        stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL
+    )
+    await asyncio.sleep(0.75) # Ждем поднятия порта
+    
+    proxy_url = f"http://127.0.0.1:{local_port}"
+    success = False
+    
+    try:
+        connector = aiohttp.TCPConnector(ssl=False)
+        async with aiohttp.ClientSession(connector=connector) as session:
+            # ТЕСТ 1: URL Test (Пинг / TTFB) через надежный 204 endpoint
+            start = time.monotonic()
+            async with session.get('http://cp.cloudflare.com/generate_204', proxy=proxy_url, timeout=4.0) as resp:
+                if resp.status not in (200, 204): raise Exception("Bad Ping")
+            
+            latency = int((time.monotonic() - start) * 1000)
+            
+            # ТЕСТ 2: Speed / Download (Качаем 1 мегабайт)
+            # Если словим EOF или обрыв, то aiohttp выкинет Exception (ОТКЛОНЯЕМ СЕРВЕР)
+            start_down = time.monotonic()
+            async with session.get('https://speed.cloudflare.com/__down?bytes=1000000', proxy=proxy_url, timeout=7.0) as resp:
+                content = await resp.read()
+                dl_time = time.monotonic() - start_down
+                speed_mbps = (len(content) * 8 / 1000000) / dl_time
+                
+            proxy['latency'] = latency
+            proxy['speed_mbps'] = round(speed_mbps, 2)
+            success = True
+            
+    except Exception:
+        proxy['latency'] = 9999.0
+        proxy['speed_mbps'] = 0.0
+    finally:
+        # Убиваем процесс жёстко и убираем следы
         try:
-            # Пытаемся открыть сокет-соединение к IP:Port сервера
-            future = asyncio.open_connection(proxy_data["host"], proxy_data["port"])
-            reader, writer = await asyncio.wait_for(future, timeout=TCP_TIMEOUT_SECONDS)
-            
-            latency = (time.monotonic() - start_time) * 1000  # Переводим в миллисекунды
-            proxy_data["latency"] = latency
-            
-            writer.close()
-            await writer.wait_closed()
+            proc.terminate()
+            await asyncio.wait_for(proc.wait(), timeout=1.0)
         except Exception:
-            # В случае тайм-аута или блока (ТСПУ) задержка остается высокой (мёртвый узел)
-            proxy_data["latency"] = 9999.0
+            proc.kill()
+            
+        if os.path.exists(config_path):
+            os.remove(config_path)
+            
+        await port_queue.put(local_port) # Освобождаем порт для следующего
+        
+    return success
 
 async def main():
-    logger.info("Запуск VPN-парсера. Скачивание конфигов из интернет-источников...")
+    logger.info("Запуск умного VPN-парсера...")
+    xray_bin = await get_xray_binary()
     
-    # 1. Конкурентная загрузка со всех ссылок
     all_raw_lines = set()
     async with aiohttp.ClientSession() as session:
         tasks =[fetch_source(session, url) for url in SOURCES]
@@ -156,46 +236,65 @@ async def main():
             for line in sublist:
                 all_raw_lines.add(line.strip())
                 
-    logger.info(f"Собрано уникальных строк/конфигов: {len(all_raw_lines)}")
+    logger.info(f"Собрано сырых узлов: {len(all_raw_lines)}")
 
-    # 2. Фильтрация и парсинг по правилам
-    valid_proxies =[]
+    # Уникальность по IP
+    unique_proxies_map = {}
     for line in all_raw_lines:
         parsed = parse_and_filter_vless(line)
         if parsed is not None:
-            valid_proxies.append(parsed)
+            # Если IP уже есть, пропускаем, чтобы не дублировать
+            if parsed['host'] not in unique_proxies_map:
+                unique_proxies_map[parsed['host']] = parsed
 
-    logger.info(f"Прошли фильтрацию (VLESS+XHTTP+Reality+RU+CIDR): {len(valid_proxies)} шт.")
+    valid_proxies = list(unique_proxies_map.values())
+    logger.info(f"Прошли базовую фильтрацию (Уникальные VLESS+XHTTP+Reality+RU): {len(valid_proxies)} шт.")
 
-    # 3. Массовый параллельный Ping-Тест (Latency Test)
     if valid_proxies:
-        logger.info("Запуск TCP Ping Test для проверки доступности (обход РКН)...")
-        # Ограничиваем до 500 одновременных сокетов, чтобы не получить бан по сети
-        semaphore = asyncio.Semaphore(500) 
-        ping_tasks = [tcp_ping(p, semaphore) for p in valid_proxies]
-        await asyncio.gather(*ping_tasks)
-
-        # Выкидываем те, что не прошли пинг, и сортируем по задержке
-        alive_proxies = [p for p in valid_proxies if p["latency"] < 9999.0]
-        alive_proxies.sort(key=lambda x: x["latency"])
+        logger.info("Запуск ГЛУБОКОГО теста. URL Test -> Соединение TLS -> Download Speed Test (1MB)...")
         
-        # Обрезаем до 250 лучших (исходя из ТЗ)
+        # Создаем пул HTTP портов для независимого паралельного тестирования
+        port_queue = asyncio.Queue()
+        for p in range(20000, 20000 + CONCURRENT_TESTS):
+            port_queue.put_nowait(p)
+            
+        tasks =[test_proxy_with_xray(p, port_queue, xray_bin) for p in valid_proxies]
+        await asyncio.gather(*tasks)
+
+        # Выжившие — только те, у кого latency < 9999
+        alive_proxies =[p for p in valid_proxies if p["latency"] < 9999.0]
+        
+        # Основная сортировка по минимальной задержке (ТЗ: "Отсортировать ... по минимальной задержке")
+        # Вторичная: по максимальной скорости
+        alive_proxies.sort(key=lambda x: (x["latency"], -x["speed_mbps"]))
+        
         best_proxies = alive_proxies[:MAX_PROXIES]
         
-        logger.info(f"Тест завершен. Живых узлов найдено: {len(alive_proxies)}. Вывод {len(best_proxies)} лучших.")
+        logger.info(f"Тест завершен. Отсеяно МЁРТВЫХ(EOF): {len(valid_proxies)-len(alive_proxies)} шт.")
+        logger.info(f"АБСОЛЮТНО ЖИВЫХ узлов: {len(alive_proxies)}. Сохранено лучших: {len(best_proxies)}.")
         
-        # 4. Сохранение результата
         with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
             for node in best_proxies:
-                # Добавляем тег скорости (задержки) к имени для наглядности
                 link = node["link"]
-                # Заменяем старое имя узла форматом: [Ping ms] OriginalName
-                link = re.sub(r'#(.*)$', f'#[{int(node["latency"])}ms] \\1', link)
-                f.write(link + "\n")
+                if '#' in link:
+                    base, name = link.rsplit('#', 1)
+                    name = urllib.parse.unquote(name)
+                    # Очищаем старые теги скоростей, если были
+                    name = re.sub(r'^\[.*?\]\s*', '', name)
+                else:
+                    base = link; name = "Proxy"
                 
-        logger.info(f"Файл успешно сохранен: {OUTPUT_FILE}")
+                # Формируем красивое название: [Пинг | Скорость Mbps] Название
+                new_name = urllib.parse.quote(f"[{node['latency']}ms|{node['speed_mbps']}Mbps] {name}")
+                new_link = f"{base}#{new_name}"
+                
+                f.write(new_link + "\n")
+                
+        logger.info(f"Файл отлично сохранен: {OUTPUT_FILE}")
     else:
-        logger.warning("Не найдено узлов, подходящих под жесткие критерии.")
+        logger.warning("Не найдено узлов до старта Speedtest.")
 
 if __name__ == "__main__":
+    if platform.system() == "Windows":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     asyncio.run(main())

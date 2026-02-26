@@ -9,6 +9,7 @@ import logging
 import platform
 import os
 import zipfile
+import json
 
 # Настройка красивого вывода
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -59,7 +60,6 @@ async def get_xray_binary():
 
     logger.info("Скачивание актуального Xray-core для глубокого тестирования скорости и трафика...")
     
-    # Ссылка для Linux (GitHub Actions Runner)
     url = "https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip"
     if system == "windows":
         url = "https://github.com/XTLS/Xray-core/releases/latest/download/Xray-windows-64.zip"
@@ -98,7 +98,6 @@ def parse_and_filter_vless(link: str) -> dict:
     link = link.strip()
     if not link.startswith("vless://"): return None
     
-    # Обрезаем имя заранее для устранения дублей IP
     base_link = link.split('#')[0]
     try:
         parsed = urllib.parse.urlsplit(base_link)
@@ -111,7 +110,7 @@ def parse_and_filter_vless(link: str) -> dict:
 
         if query.get('security', [''])[0].lower() != 'reality': return None
         transport = query.get('type', [''])[0].lower()
-        if transport not in['xhttp', 'splithttp']: return None
+        if transport not in ['xhttp', 'splithttp']: return None
         
         sni = query.get('sni', [''])[0].lower()
         if not (sni.endswith('.ru') or '.ru' in sni): return None
@@ -123,6 +122,7 @@ def parse_and_filter_vless(link: str) -> dict:
             "host": host,
             "port": int(port),
             "type": transport,
+            "security": "reality",    # Добавлен недостающий ключ безопасности
             "sni": sni,
             "pbk": query.get('pbk', [''])[0],
             "sid": query.get('sid', [''])[0],
@@ -145,59 +145,62 @@ async def fetch_source(session: aiohttp.ClientSession, url: str) -> list:
         pass
     return[]
 
-import json
 async def test_proxy_with_xray(proxy: dict, port_queue: asyncio.Queue, xray_bin: str):
     """Глубокий тест прокси: запуск локального ядра, тест TTFB, скачивание 1МБ (Имитация Speedtest)"""
     local_port = await port_queue.get()
     config_path = f"config_{local_port}.json"
-    
-    # 1. Формируем чистый конфиг для Xray
-    config = {
-        "log": {"loglevel": "none"},
-        "inbounds":[{"port": local_port, "listen": "127.0.0.1", "protocol": "http"}],
-        "outbounds":[{
-            "protocol": "vless",
-            "settings": {"vnext": [{"address": proxy['host'], "port": proxy['port'], 
-                                    "users": [{"id": proxy['uuid'], "encryption": "none", "flow": ""}]}]},
-            "streamSettings": {
-                "network": "xhttp", # Приводим к стандарту свежего ядра
-                "security": proxy['security'],
-                "realitySettings": {"serverName": proxy['sni'], "publicKey": proxy['pbk'], 
-                                    "shortId": proxy['sid'], "fingerprint": proxy['fp']},
-                "xhttpSettings": {"path": urllib.parse.unquote(proxy['path'])}
-            }
-        }]
-    }
-    if proxy.get('host_http'):
-        config["outbounds"][0]["streamSettings"]["xhttpSettings"]["host"] = proxy['host_http']
-
-    with open(config_path, 'w', encoding='utf-8') as f:
-        json.dump(config, f)
-
-    # 2. Запускаем изолированный процесс туннеля
-    proc = await asyncio.create_subprocess_exec(
-        xray_bin, '-c', config_path,
-        stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL
-    )
-    await asyncio.sleep(0.75) # Ждем поднятия порта
-    
-    proxy_url = f"http://127.0.0.1:{local_port}"
+    net_type = proxy['type'] # xhttp или splithttp
+    proc = None
     success = False
-    
+
     try:
+        # Формируем чистый конфиг для Xray
+        config = {
+            "log": {"loglevel": "none"},
+            "inbounds":[{"port": local_port, "listen": "127.0.0.1", "protocol": "http"}],
+            "outbounds":[{
+                "protocol": "vless",
+                "settings": {"vnext": [{"address": proxy['host'], "port": proxy['port'], 
+                                        "users": [{"id": proxy['uuid'], "encryption": "none", "flow": ""}]}]},
+                "streamSettings": {
+                    "network": net_type,
+                    "security": proxy['security'],
+                    "realitySettings": {"serverName": proxy['sni'], "publicKey": proxy['pbk'], 
+                                        "shortId": proxy['sid'], "fingerprint": proxy['fp']},
+                }
+            }]
+        }
+        
+        # Динамически подставляем настройки транспорта для обратной совместимости xhttp/splithttp
+        settings_key = f"{net_type}Settings"
+        config["outbounds"][0]["streamSettings"][settings_key] = {"path": urllib.parse.unquote(proxy['path'])}
+        if proxy.get('host_http'):
+            config["outbounds"][0]["streamSettings"][settings_key]["host"] = proxy['host_http']
+
+        with open(config_path, 'w', encoding='utf-8') as f:
+            json.dump(config, f)
+
+        # Запускаем изолированный туннель
+        proc = await asyncio.create_subprocess_exec(
+            xray_bin, 'run', '-c', config_path,
+            stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL
+        )
+        await asyncio.sleep(1.0) # Даем ядру время запустить http-inbound порт
+        
+        proxy_url = f"http://127.0.0.1:{local_port}"
+        
         connector = aiohttp.TCPConnector(ssl=False)
         async with aiohttp.ClientSession(connector=connector) as session:
-            # ТЕСТ 1: URL Test (Пинг / TTFB) через надежный 204 endpoint
+            # ТЕСТ 1: URL Test (Пинг / TTFB) через генератор 204
             start = time.monotonic()
             async with session.get('http://cp.cloudflare.com/generate_204', proxy=proxy_url, timeout=4.0) as resp:
                 if resp.status not in (200, 204): raise Exception("Bad Ping")
             
             latency = int((time.monotonic() - start) * 1000)
             
-            # ТЕСТ 2: Speed / Download (Качаем 1 мегабайт)
-            # Если словим EOF или обрыв, то aiohttp выкинет Exception (ОТКЛОНЯЕМ СЕРВЕР)
+            # ТЕСТ 2: Speed / Download (Качаем 1 мегабайт для проверки обрыва трафика(EOF))
             start_down = time.monotonic()
-            async with session.get('https://speed.cloudflare.com/__down?bytes=1000000', proxy=proxy_url, timeout=7.0) as resp:
+            async with session.get('https://speed.cloudflare.com/__down?bytes=1000000', proxy=proxy_url, timeout=8.0) as resp:
                 content = await resp.read()
                 dl_time = time.monotonic() - start_down
                 speed_mbps = (len(content) * 8 / 1000000) / dl_time
@@ -211,15 +214,18 @@ async def test_proxy_with_xray(proxy: dict, port_queue: asyncio.Queue, xray_bin:
         proxy['speed_mbps'] = 0.0
     finally:
         # Убиваем процесс жёстко и убираем следы
-        try:
-            proc.terminate()
-            await asyncio.wait_for(proc.wait(), timeout=1.0)
-        except Exception:
-            proc.kill()
+        if proc:
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
             
         if os.path.exists(config_path):
-            os.remove(config_path)
-            
+            try:
+                os.remove(config_path)
+            except OSError:
+                pass
+                
         await port_queue.put(local_port) # Освобождаем порт для следующего
         
     return success
@@ -230,7 +236,7 @@ async def main():
     
     all_raw_lines = set()
     async with aiohttp.ClientSession() as session:
-        tasks =[fetch_source(session, url) for url in SOURCES]
+        tasks = [fetch_source(session, url) for url in SOURCES]
         results = await asyncio.gather(*tasks)
         for sublist in results:
             for line in sublist:
@@ -238,12 +244,10 @@ async def main():
                 
     logger.info(f"Собрано сырых узлов: {len(all_raw_lines)}")
 
-    # Уникальность по IP
     unique_proxies_map = {}
     for line in all_raw_lines:
         parsed = parse_and_filter_vless(line)
         if parsed is not None:
-            # Если IP уже есть, пропускаем, чтобы не дублировать
             if parsed['host'] not in unique_proxies_map:
                 unique_proxies_map[parsed['host']] = parsed
 
@@ -253,7 +257,6 @@ async def main():
     if valid_proxies:
         logger.info("Запуск ГЛУБОКОГО теста. URL Test -> Соединение TLS -> Download Speed Test (1MB)...")
         
-        # Создаем пул HTTP портов для независимого паралельного тестирования
         port_queue = asyncio.Queue()
         for p in range(20000, 20000 + CONCURRENT_TESTS):
             port_queue.put_nowait(p)
@@ -261,13 +264,8 @@ async def main():
         tasks =[test_proxy_with_xray(p, port_queue, xray_bin) for p in valid_proxies]
         await asyncio.gather(*tasks)
 
-        # Выжившие — только те, у кого latency < 9999
-        alive_proxies =[p for p in valid_proxies if p["latency"] < 9999.0]
-        
-        # Основная сортировка по минимальной задержке (ТЗ: "Отсортировать ... по минимальной задержке")
-        # Вторичная: по максимальной скорости
+        alive_proxies = [p for p in valid_proxies if p["latency"] < 9999.0]
         alive_proxies.sort(key=lambda x: (x["latency"], -x["speed_mbps"]))
-        
         best_proxies = alive_proxies[:MAX_PROXIES]
         
         logger.info(f"Тест завершен. Отсеяно МЁРТВЫХ(EOF): {len(valid_proxies)-len(alive_proxies)} шт.")
@@ -279,12 +277,10 @@ async def main():
                 if '#' in link:
                     base, name = link.rsplit('#', 1)
                     name = urllib.parse.unquote(name)
-                    # Очищаем старые теги скоростей, если были
                     name = re.sub(r'^\[.*?\]\s*', '', name)
                 else:
                     base = link; name = "Proxy"
                 
-                # Формируем красивое название: [Пинг | Скорость Mbps] Название
                 new_name = urllib.parse.quote(f"[{node['latency']}ms|{node['speed_mbps']}Mbps] {name}")
                 new_link = f"{base}#{new_name}"
                 

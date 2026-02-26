@@ -18,18 +18,16 @@ use dashmap::DashMap;
 use futures::stream::{self, StreamExt};
 use indexmap::IndexMap;
 use ipnetwork::IpNetwork;
-use parking_lot::RwLock;
 use percent_encoding::percent_decode_str;
 use sha2::{Digest, Sha256};
-use std::collections::HashSet;
 use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::time::timeout;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
 // ═══════════════════════════════════════════════════════════════════
 // КОНСТАНТЫ
@@ -43,7 +41,7 @@ const SPEED_TEST_TIMEOUT: Duration = Duration::from_secs(20);
 const CONCURRENT_FETCHES: usize = 8;
 const CONCURRENT_TESTS: usize = 32;
 const TCP_PING_ROUNDS: usize = 3;
-const MIN_SPEED_BYTES: u64 = 1024; // 1 KB минимум для прохождения speed test
+const MIN_SPEED_BYTES: u64 = 1024;
 const OUTPUT_FILE: &str = "best_ru_cidr_xhttp_reality.txt";
 
 /// Источники конфигураций
@@ -82,7 +80,6 @@ const SOURCES: &[&str] = &[
 // ═══════════════════════════════════════════════════════════════════
 
 const RU_CIDRS: &[&str] = &[
-    // Ростелеком
     "5.8.0.0/16",
     "5.16.0.0/14",
     "5.59.0.0/16",
@@ -140,7 +137,6 @@ const RU_CIDRS: &[&str] = &[
     "46.243.0.0/16",
     "46.250.0.0/16",
     "46.254.0.0/16",
-    // МТС / Билайн / Мегафон
     "62.16.0.0/14",
     "62.33.0.0/16",
     "62.68.0.0/16",
@@ -195,7 +191,6 @@ const RU_CIDRS: &[&str] = &[
     "77.244.0.0/15",
     "77.246.0.0/16",
     "77.247.0.0/16",
-    // Yandex, Mail.ru, VK
     "5.45.192.0/18",
     "5.255.192.0/18",
     "77.88.0.0/18",
@@ -208,7 +203,6 @@ const RU_CIDRS: &[&str] = &[
     "185.32.184.0/22",
     "185.71.76.0/22",
     "213.180.192.0/19",
-    // Крупные хостинги RU
     "78.24.0.0/15",
     "78.36.0.0/14",
     "78.81.0.0/16",
@@ -270,7 +264,6 @@ const RU_CIDRS: &[&str] = &[
     "81.200.0.0/16",
     "81.211.0.0/16",
     "81.222.0.0/16",
-    // Широкие блоки
     "82.114.0.0/15",
     "82.138.0.0/16",
     "82.140.0.0/14",
@@ -297,7 +290,6 @@ const RU_CIDRS: &[&str] = &[
     "83.237.0.0/16",
     "83.239.0.0/16",
     "83.243.0.0/16",
-    // Дополнительные
     "85.21.0.0/16",
     "85.26.0.0/15",
     "85.28.0.0/14",
@@ -487,7 +479,6 @@ const RU_CIDRS: &[&str] = &[
     "95.221.0.0/16",
     "95.222.0.0/16",
     "95.223.0.0/16",
-    // 176-185 блоки
     "176.14.0.0/15",
     "176.28.0.0/16",
     "176.32.0.0/14",
@@ -552,7 +543,6 @@ const RU_CIDRS: &[&str] = &[
     "178.237.0.0/16",
     "178.248.0.0/16",
     "178.249.0.0/16",
-    // 185.x
     "185.3.0.0/16",
     "185.4.0.0/16",
     "185.5.0.0/16",
@@ -664,7 +654,6 @@ const RU_CIDRS: &[&str] = &[
     "185.251.0.0/16",
     "185.253.0.0/16",
     "185.254.0.0/16",
-    // 188, 193, 194, 195
     "188.16.0.0/14",
     "188.32.0.0/12",
     "188.64.0.0/16",
@@ -807,7 +796,6 @@ const RU_CIDRS: &[&str] = &[
     "195.245.0.0/16",
     "195.248.0.0/16",
     "195.250.0.0/16",
-    // 212, 213, 217
     "212.1.0.0/16",
     "212.3.0.0/16",
     "212.5.0.0/16",
@@ -921,21 +909,13 @@ const RU_CIDRS: &[&str] = &[
 /// Распарсенная VLESS-конфигурация
 #[derive(Debug, Clone)]
 struct VlessConfig {
-    /// Полная URI-строка ключа
     raw_uri: String,
-    /// UUID пользователя
     uuid: String,
-    /// Адрес сервера (IP или домен)
     address: String,
-    /// Порт сервера
     port: u16,
-    /// Параметры запроса
     params: IndexMap<String, String>,
-    /// Резолвленный IP (если удалось)
     resolved_ip: Option<IpAddr>,
-    /// Имя/описание
     remark: String,
-    /// SHA256 хеш для дедупликации
     hash: String,
 }
 
@@ -943,17 +923,11 @@ struct VlessConfig {
 #[derive(Debug, Clone)]
 struct TestResult {
     config: VlessConfig,
-    /// Средняя задержка TCP ping в миллисекундах
     tcp_ping_ms: f64,
-    /// Минимальная задержка TCP ping
     tcp_ping_min_ms: f64,
-    /// URL Test задержка
     url_test_ms: f64,
-    /// Скорость скачивания байт/сек
     download_speed: f64,
-    /// Скорость загрузки байт/сек
     upload_speed: f64,
-    /// Прошёл все тесты
     passed: bool,
 }
 
@@ -984,7 +958,6 @@ impl Stats {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Инициализация логирования
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -1003,16 +976,12 @@ async fn main() -> Result<()> {
 
     let stats = Arc::new(Stats::new());
 
-    // ───────────────────────────────────────────────────────
     // Шаг 1: Загрузка RU CIDR
-    // ───────────────────────────────────────────────────────
     info!("━━━ Шаг 1: Загрузка RU CIDR блоков ━━━");
     let ru_cidrs = load_ru_cidrs()?;
     info!("  Загружено {} RU CIDR блоков", ru_cidrs.len());
 
-    // ───────────────────────────────────────────────────────
-    // Шаг 2: Загрузка конфигураций из всех источников
-    // ───────────────────────────────────────────────────────
+    // Шаг 2: Загрузка конфигураций
     info!("━━━ Шаг 2: Загрузка конфигураций из {} источников ━━━", SOURCES.len());
     let raw_configs = fetch_all_sources(Arc::clone(&stats)).await;
     info!(
@@ -1020,9 +989,7 @@ async fn main() -> Result<()> {
         stats.total_fetched.load(Ordering::Relaxed)
     );
 
-    // ───────────────────────────────────────────────────────
     // Шаг 3: Парсинг VLESS URI
-    // ───────────────────────────────────────────────────────
     info!("━━━ Шаг 3: Парсинг VLESS URI ━━━");
     let vless_configs = parse_vless_configs(&raw_configs, Arc::clone(&stats));
     info!(
@@ -1030,16 +997,11 @@ async fn main() -> Result<()> {
         stats.total_vless.load(Ordering::Relaxed)
     );
 
-    // ───────────────────────────────────────────────────────
-    // Шаг 4: Фильтрация: XHTTP + Reality + RU CIDR/SNI
-    // ───────────────────────────────────────────────────────
+    // Шаг 4: Фильтрация
     info!("━━━ Шаг 4: Фильтрация (XHTTP + Reality + RU CIDR/SNI) ━━━");
     let filtered = filter_configs(vless_configs, &ru_cidrs, Arc::clone(&stats)).await;
     let filtered_count = filtered.len();
-    info!(
-        "  После фильтрации: {} конфигураций",
-        filtered_count
-    );
+    info!("  После фильтрации: {} конфигураций", filtered_count);
 
     if filtered.is_empty() {
         warn!("Не найдено подходящих конфигураций. Завершение.");
@@ -1047,9 +1009,7 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
-    // ───────────────────────────────────────────────────────
-    // Шаг 5: Тестирование (TCP Ping + URL Test + Speed Test)
-    // ───────────────────────────────────────────────────────
+    // Шаг 5: Тестирование
     info!("━━━ Шаг 5: Тестирование {} конфигураций ━━━", filtered_count);
     let test_results = test_all_configs(filtered, Arc::clone(&stats)).await;
     info!(
@@ -1058,18 +1018,16 @@ async fn main() -> Result<()> {
         stats.total_passed.load(Ordering::Relaxed)
     );
 
-    // ───────────────────────────────────────────────────────
     // Шаг 6: Сортировка и вывод
-    // ───────────────────────────────────────────────────────
     info!("━━━ Шаг 6: Сортировка и вывод результатов ━━━");
     let final_results = sort_and_limit(test_results);
     write_output(&final_results)?;
 
     let elapsed = start_time.elapsed();
     info!("╔══════════════════════════════════════════════════════════════╗");
-    info!("║  ЗАВЕРШЕНО за {:.1} сек                                    ║", elapsed.as_secs_f64());
-    info!("║  Найдено {} лучших серверов                            ║", final_results.len());
-    info!("║  Файл: {}                        ║", OUTPUT_FILE);
+    info!("║  ЗАВЕРШЕНО за {:.1} сек", elapsed.as_secs_f64());
+    info!("║  Найдено {} лучших серверов", final_results.len());
+    info!("║  Файл: {}", OUTPUT_FILE);
     info!("╚══════════════════════════════════════════════════════════════╝");
 
     Ok(())
@@ -1099,18 +1057,14 @@ fn is_ip_in_ru_cidrs(ip: IpAddr, cidrs: &[IpNetwork]) -> bool {
 fn is_ru_sni(sni: &str) -> bool {
     let sni_lower = sni.to_lowercase();
     sni_lower.ends_with(".ru")
-        || sni_lower.ends_with(".рф")
         || sni_lower.ends_with(".su")
         || sni_lower == "ru"
-        || sni_lower == "рф"
         || sni_lower == "su"
-        // Популярные российские домены
-        || sni_lower.ends_with(".yandex.ru")
-        || sni_lower.ends_with(".mail.ru")
-        || sni_lower.ends_with(".vk.com")
+        || sni_lower.contains(".yandex.ru")
+        || sni_lower.contains(".mail.ru")
+        || sni_lower.contains(".vk.com")
         || sni_lower.contains("gosuslugi")
         || sni_lower.contains("kremlin")
-        || sni_lower.contains("government")
         || sni_lower.contains("mos.ru")
 }
 
@@ -1131,7 +1085,7 @@ async fn fetch_all_sources(stats: Arc<Stats>) -> Vec<String> {
 
     let all_lines: Arc<DashMap<String, ()>> = Arc::new(DashMap::new());
 
-    let results = stream::iter(SOURCES.iter().enumerate())
+    let _results: Vec<()> = stream::iter(SOURCES.iter().enumerate())
         .map(|(idx, url)| {
             let client = client.clone();
             let all_lines = Arc::clone(&all_lines);
@@ -1154,7 +1108,7 @@ async fn fetch_all_sources(stats: Arc<Stats>) -> Vec<String> {
             }
         })
         .buffer_unordered(CONCURRENT_FETCHES)
-        .collect::<Vec<_>>()
+        .collect()
         .await;
 
     all_lines
@@ -1179,7 +1133,6 @@ async fn fetch_single_source(client: &reqwest::Client, url: &str) -> Result<Vec<
         .await
         .context("Ошибка чтения тела ответа")?;
 
-    // Попытка декодирования base64
     let decoded = try_decode_base64(&body);
     let text = decoded.as_deref().unwrap_or(&body);
 
@@ -1192,6 +1145,7 @@ async fn fetch_single_source(client: &reqwest::Client, url: &str) -> Result<Vec<
     Ok(lines)
 }
 
+/// Попытка декодирования base64 — исправлено: без dyn trait (Engine не dyn-compatible)
 fn try_decode_base64(input: &str) -> Option<String> {
     let trimmed = input.trim();
 
@@ -1200,8 +1154,10 @@ fn try_decode_base64(input: &str) -> Option<String> {
         return None;
     }
 
-    // Пробуем разные варианты base64
-    for engine in &[&STANDARD as &dyn base64::Engine, &URL_SAFE, &URL_SAFE_NO_PAD] {
+    // Пробуем разные варианты base64 через конкретные типы
+    let engines = [&STANDARD, &URL_SAFE, &URL_SAFE_NO_PAD];
+
+    for engine in &engines {
         if let Ok(bytes) = engine.decode(trimmed.as_bytes()) {
             if let Ok(decoded) = String::from_utf8(bytes) {
                 if decoded.contains("vless://") {
@@ -1220,7 +1176,7 @@ fn try_decode_base64(input: &str) -> Option<String> {
             continue;
         }
         let mut line_decoded = false;
-        for engine in &[&STANDARD as &dyn base64::Engine, &URL_SAFE, &URL_SAFE_NO_PAD] {
+        for engine in &engines {
             if let Ok(bytes) = engine.decode(line.as_bytes()) {
                 if let Ok(decoded) = String::from_utf8(bytes) {
                     if decoded.contains("://") {
@@ -1257,7 +1213,7 @@ fn truncate_url(url: &str) -> String {
 // ═══════════════════════════════════════════════════════════════════
 
 fn parse_vless_configs(raw_lines: &[String], stats: Arc<Stats>) -> Vec<VlessConfig> {
-    let seen_hashes: Arc<DashMap<String, ()>> = Arc::new(DashMap::new());
+    let seen_hashes: DashMap<String, ()> = DashMap::new();
     let configs: Vec<VlessConfig> = raw_lines
         .iter()
         .filter_map(|line| {
@@ -1274,32 +1230,25 @@ fn parse_vless_configs(raw_lines: &[String], stats: Arc<Stats>) -> Vec<VlessConf
 }
 
 fn parse_single_vless(uri: &str, seen: &DashMap<String, ()>) -> Option<VlessConfig> {
-    // vless://UUID@ADDRESS:PORT?params#remark
     let without_scheme = uri.strip_prefix("vless://")?;
 
-    // Разделяем на основную часть и fragment (remark)
     let (main_part, remark) = match without_scheme.split_once('#') {
         Some((m, r)) => (m, percent_decode_str(r).decode_utf8_lossy().to_string()),
         None => (without_scheme, String::new()),
     };
 
-    // Разделяем на userinfo@host:port и query
     let (authority_part, query_string) = match main_part.split_once('?') {
         Some((a, q)) => (a, q),
         None => (main_part, ""),
     };
 
-    // UUID@address:port
     let (uuid, host_port) = authority_part.split_once('@')?;
     let uuid = uuid.to_string();
 
-    // Парсим address:port (учитываем IPv6 в квадратных скобках)
     let (address, port) = parse_host_port(host_port)?;
 
-    // Парсим query параметры
     let params = parse_query_params(query_string);
 
-    // Вычисляем хеш для дедупликации (по uuid + address + port + ключевым параметрам)
     let hash_input = format!(
         "{}|{}|{}|{}|{}|{}",
         uuid,
@@ -1313,7 +1262,6 @@ fn parse_single_vless(uri: &str, seen: &DashMap<String, ()>) -> Option<VlessConf
     hasher.update(hash_input.as_bytes());
     let hash = hex::encode(hasher.finalize());
 
-    // Дедупликация
     if seen.contains_key(&hash) {
         return None;
     }
@@ -1333,10 +1281,9 @@ fn parse_single_vless(uri: &str, seen: &DashMap<String, ()>) -> Option<VlessConf
 
 fn parse_host_port(input: &str) -> Option<(String, u16)> {
     if input.starts_with('[') {
-        // IPv6: [::1]:443
         let end_bracket = input.find(']')?;
         let addr = input[1..end_bracket].to_string();
-        let port_str = input.get(end_bracket + 2..)?; // skip ]:
+        let port_str = input.get(end_bracket + 2..)?;
         let port = port_str.parse().ok()?;
         Some((addr, port))
     } else {
@@ -1378,7 +1325,7 @@ async fn filter_configs(
         .filter_map(|mut config| {
             let cidrs = ru_cidrs.to_vec();
             async move {
-                // 1. Проверяем транспорт: XHTTP (xhttp или splithttp)
+                // 1. Транспорт: XHTTP (xhttp или splithttp)
                 let transport = config.params.get("type").map(|s| s.to_lowercase());
                 let is_xhttp = match &transport {
                     Some(t) => t == "xhttp" || t == "splithttp",
@@ -1388,7 +1335,7 @@ async fn filter_configs(
                     return None;
                 }
 
-                // 2. Проверяем security: reality
+                // 2. Security: reality
                 let security = config.params.get("security").map(|s| s.to_lowercase());
                 let is_reality = match &security {
                     Some(s) => s == "reality",
@@ -1398,7 +1345,7 @@ async fn filter_configs(
                     return None;
                 }
 
-                // 3. Проверяем наличие обязательных Reality параметров
+                // 3. Public Key обязателен
                 let has_pbk = config
                     .params
                     .get("pbk")
@@ -1408,13 +1355,8 @@ async fn filter_configs(
                     return None;
                 }
 
-                // 4. Проверяем RU: SNI или IP в RU CIDR
-                let sni = config
-                    .params
-                    .get("sni")
-                    .cloned()
-                    .unwrap_or_default();
-
+                // 4. RU: SNI или IP
+                let sni = config.params.get("sni").cloned().unwrap_or_default();
                 let server_name = config
                     .params
                     .get("servername")
@@ -1429,7 +1371,6 @@ async fn filter_configs(
 
                 let sni_is_ru = is_ru_sni(&effective_sni);
 
-                // Резолвим IP адрес сервера
                 let resolved_ip = resolve_address(&config.address).await;
                 config.resolved_ip = resolved_ip;
 
@@ -1438,7 +1379,6 @@ async fn filter_configs(
                     None => false,
                 };
 
-                // Хотя бы одно из условий: SNI RU или IP в RU CIDR
                 if !sni_is_ru && !ip_is_ru {
                     return None;
                 }
@@ -1453,33 +1393,33 @@ async fn filter_configs(
     filtered
 }
 
+/// DNS-резолвинг — исправлено: TokioAsyncResolver::tokio() не возвращает Result
 async fn resolve_address(address: &str) -> Option<IpAddr> {
     // Если уже IP
     if let Ok(ip) = address.parse::<IpAddr>() {
         return Some(ip);
     }
 
-    // DNS резолвинг
+    // Стандартный DNS через блокирующий вызов
     let addr_with_port = format!("{}:0", address);
-    match tokio::task::spawn_blocking(move || addr_with_port.to_socket_addrs())
-        .await
-    {
-        Ok(Ok(mut addrs)) => addrs.next().map(|sa| sa.ip()),
-        _ => {
-            // Пробуем через trust-dns
-            match trust_dns_resolver::TokioAsyncResolver::tokio(
-                trust_dns_resolver::config::ResolverConfig::google(),
-                trust_dns_resolver::config::ResolverOpts::default(),
-            ) {
-                Ok(resolver) => {
-                    match resolver.lookup_ip(address).await {
-                        Ok(lookup) => lookup.iter().next(),
-                        Err(_) => None,
-                    }
-                }
-                Err(_) => None,
+    match tokio::task::spawn_blocking(move || addr_with_port.to_socket_addrs()).await {
+        Ok(Ok(mut addrs)) => {
+            if let Some(sa) = addrs.next() {
+                return Some(sa.ip());
             }
         }
+        _ => {}
+    }
+
+    // Fallback через trust-dns (tokio() возвращает AsyncResolver напрямую, не Result)
+    let resolver = trust_dns_resolver::TokioAsyncResolver::tokio(
+        trust_dns_resolver::config::ResolverConfig::google(),
+        trust_dns_resolver::config::ResolverOpts::default(),
+    );
+
+    match resolver.lookup_ip(address).await {
+        Ok(lookup) => lookup.iter().next(),
+        Err(_) => None,
     }
 }
 
@@ -1522,7 +1462,7 @@ async fn test_single_config(config: VlessConfig) -> TestResult {
         passed: false,
     };
 
-    // ─── TCP Ping ───
+    // TCP Ping
     match tcp_ping(&config).await {
         Some((avg, min)) => {
             result.tcp_ping_ms = avg;
@@ -1538,7 +1478,7 @@ async fn test_single_config(config: VlessConfig) -> TestResult {
         }
     }
 
-    // ─── URL Test (TLS handshake to the server with Reality SNI) ───
+    // URL Test
     match url_test(&config).await {
         Some(ms) => {
             result.url_test_ms = ms;
@@ -1553,7 +1493,7 @@ async fn test_single_config(config: VlessConfig) -> TestResult {
         }
     }
 
-    // ─── Speed Test (download/upload estimation) ───
+    // Speed Test
     match speed_test(&config).await {
         Some((down, up)) => {
             result.download_speed = down;
@@ -1564,9 +1504,6 @@ async fn test_single_config(config: VlessConfig) -> TestResult {
             );
         }
         None => {
-            debug!("  Speed Test FAILED {}:{}", config.address, config.port);
-            // Speed test failure — всё равно пропускаем с минимальными значениями,
-            // если TCP ping и URL test прошли
             result.download_speed = MIN_SPEED_BYTES as f64;
             result.upload_speed = MIN_SPEED_BYTES as f64;
         }
@@ -1576,7 +1513,7 @@ async fn test_single_config(config: VlessConfig) -> TestResult {
     result
 }
 
-/// TCP Ping — замеряем время установления TCP-соединения
+/// TCP Ping
 async fn tcp_ping(config: &VlessConfig) -> Option<(f64, f64)> {
     let addr = resolve_to_socket_addr(&config.address, config.port).await?;
 
@@ -1591,11 +1528,9 @@ async fn tcp_ping(config: &VlessConfig) -> Option<(f64, f64)> {
                 drop(stream);
             }
             _ => {
-                // Одна неудача допустима
                 continue;
             }
         }
-        // Пауза между пингами
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
 
@@ -1609,20 +1544,17 @@ async fn tcp_ping(config: &VlessConfig) -> Option<(f64, f64)> {
     Some((avg, min))
 }
 
-/// URL Test — устанавливаем TCP + проверяем что порт жив и готов к TLS
+/// URL Test — TCP + TLS handshake проверка
 async fn url_test(config: &VlessConfig) -> Option<f64> {
     let addr = resolve_to_socket_addr(&config.address, config.port).await?;
 
     let start = Instant::now();
 
-    // Устанавливаем TCP-соединение
     let mut stream = match timeout(URL_TEST_TIMEOUT, TcpStream::connect(addr)).await {
         Ok(Ok(s)) => s,
         _ => return None,
     };
 
-    // Отправляем TLS ClientHello минимальный (проверяем что сервер отвечает)
-    // Формируем минимальный TLS 1.2 ClientHello для проверки
     let sni = config
         .params
         .get("sni")
@@ -1632,26 +1564,14 @@ async fn url_test(config: &VlessConfig) -> Option<f64> {
 
     let client_hello = build_minimal_client_hello(&sni);
 
-    match timeout(
-        Duration::from_secs(5),
-        stream.write_all(&client_hello),
-    )
-    .await
-    {
+    match timeout(Duration::from_secs(5), stream.write_all(&client_hello)).await {
         Ok(Ok(_)) => {}
         _ => return None,
     }
 
-    // Читаем ответ (ServerHello)
     let mut buf = [0u8; 512];
     match timeout(Duration::from_secs(5), stream.read(&mut buf)).await {
         Ok(Ok(n)) if n > 0 => {
-            // Проверяем что ответ похож на TLS ServerHello (ContentType = 0x16)
-            if buf[0] == 0x16 {
-                let elapsed = start.elapsed().as_secs_f64() * 1000.0;
-                return Some(elapsed);
-            }
-            // Даже если не TLS, сервер ответил — считаем жив
             let elapsed = start.elapsed().as_secs_f64() * 1000.0;
             Some(elapsed)
         }
@@ -1659,16 +1579,15 @@ async fn url_test(config: &VlessConfig) -> Option<f64> {
     }
 }
 
-/// Speed Test — оценка скорости через передачу данных по TCP
+/// Speed Test
 async fn speed_test(config: &VlessConfig) -> Option<(f64, f64)> {
     let addr = resolve_to_socket_addr(&config.address, config.port).await?;
 
-    // Download test: подключаемся и читаем что сервер пошлёт
+    // Download test
     let download_speed = {
         let start = Instant::now();
         match timeout(SPEED_TEST_TIMEOUT, TcpStream::connect(addr)).await {
             Ok(Ok(mut stream)) => {
-                // Отправляем минимальный запрос
                 let sni = config
                     .params
                     .get("sni")
@@ -1706,7 +1625,7 @@ async fn speed_test(config: &VlessConfig) -> Option<(f64, f64)> {
         }
     };
 
-    // Upload test: подключаемся и пишем данные
+    // Upload test
     let upload_speed = {
         let start = Instant::now();
         match timeout(SPEED_TEST_TIMEOUT, TcpStream::connect(addr)).await {
@@ -1738,7 +1657,7 @@ async fn speed_test(config: &VlessConfig) -> Option<(f64, f64)> {
     Some((download_speed, upload_speed))
 }
 
-/// Минимальный TLS 1.2 ClientHello для проверки сервера
+/// Минимальный TLS 1.2 ClientHello
 fn build_minimal_client_hello(sni: &str) -> Vec<u8> {
     let sni_bytes = sni.as_bytes();
     let sni_len = sni_bytes.len();
@@ -1746,93 +1665,58 @@ fn build_minimal_client_hello(sni: &str) -> Vec<u8> {
     // SNI Extension
     let sni_extension: Vec<u8> = {
         let mut ext = Vec::new();
-        // Extension Type: server_name (0x0000)
         ext.extend_from_slice(&[0x00, 0x00]);
-        // Extension Data Length
         let data_len = (sni_len + 5) as u16;
         ext.extend_from_slice(&data_len.to_be_bytes());
-        // Server Name List Length
         let list_len = (sni_len + 3) as u16;
         ext.extend_from_slice(&list_len.to_be_bytes());
-        // Server Name Type: host_name (0)
         ext.push(0x00);
-        // Server Name Length
         let name_len = sni_len as u16;
         ext.extend_from_slice(&name_len.to_be_bytes());
-        // Server Name
         ext.extend_from_slice(sni_bytes);
         ext
     };
 
     // Supported Versions Extension (TLS 1.3)
     let supported_versions: Vec<u8> = vec![
-        0x00, 0x2b, // Extension Type: supported_versions
-        0x00, 0x03, // Length
-        0x02,       // Supported Versions Length
-        0x03, 0x04, // TLS 1.3
+        0x00, 0x2b, 0x00, 0x03, 0x02, 0x03, 0x04,
     ];
 
     let extensions_len = sni_extension.len() + supported_versions.len();
 
-    // ClientHello
     let mut hello = Vec::new();
 
     // Handshake Type: ClientHello (1)
     hello.push(0x01);
 
-    // Random (32 bytes)
     let random: [u8; 32] = rand::random();
-
-    // Session ID Length (0)
     let session_id_len: u8 = 0;
 
-    // Cipher Suites
     let cipher_suites: Vec<u8> = vec![
-        0x00, 0x04, // Length (2 cipher suites = 4 bytes)
-        0x13, 0x01, // TLS_AES_128_GCM_SHA256
-        0x13, 0x02, // TLS_AES_256_GCM_SHA384
+        0x00, 0x04, 0x13, 0x01, 0x13, 0x02,
     ];
 
-    // Compression Methods
-    let compression: Vec<u8> = vec![0x01, 0x00]; // 1 method, null
+    let compression: Vec<u8> = vec![0x01, 0x00];
+    let version: [u8; 2] = [0x03, 0x03];
 
-    // Client Version
-    let version: [u8; 2] = [0x03, 0x03]; // TLS 1.2
+    let body_len = 2 + 32 + 1 + cipher_suites.len() + compression.len() + 2 + extensions_len;
 
-    // Calculate hello body length
-    let body_len = 2 // version
-        + 32 // random
-        + 1 // session id length
-        + cipher_suites.len()
-        + compression.len()
-        + 2 // extensions length
-        + extensions_len;
-
-    // Handshake length (3 bytes)
     let body_len_bytes = (body_len as u32).to_be_bytes();
     hello.extend_from_slice(&body_len_bytes[1..4]);
-
-    // Version
     hello.extend_from_slice(&version);
-    // Random
     hello.extend_from_slice(&random);
-    // Session ID Length
     hello.push(session_id_len);
-    // Cipher Suites
     hello.extend_from_slice(&cipher_suites);
-    // Compression
     hello.extend_from_slice(&compression);
-    // Extensions Length
     let ext_len_bytes = (extensions_len as u16).to_be_bytes();
     hello.extend_from_slice(&ext_len_bytes);
-    // Extensions
     hello.extend_from_slice(&sni_extension);
     hello.extend_from_slice(&supported_versions);
 
     // Wrap in TLS Record
     let mut record = Vec::new();
-    record.push(0x16); // ContentType: Handshake
-    record.extend_from_slice(&[0x03, 0x01]); // Legacy version: TLS 1.0
+    record.push(0x16);
+    record.extend_from_slice(&[0x03, 0x01]);
     let record_len = (hello.len() as u16).to_be_bytes();
     record.extend_from_slice(&record_len);
     record.extend_from_slice(&hello);
@@ -1846,9 +1730,7 @@ async fn resolve_to_socket_addr(address: &str, port: u16) -> Option<SocketAddr> 
     }
 
     let addr_str = format!("{}:{}", address, port);
-    match tokio::task::spawn_blocking(move || addr_str.to_socket_addrs())
-        .await
-    {
+    match tokio::task::spawn_blocking(move || addr_str.to_socket_addrs()).await {
         Ok(Ok(mut addrs)) => addrs.next(),
         _ => None,
     }
@@ -1859,14 +1741,11 @@ async fn resolve_to_socket_addr(address: &str, port: u16) -> Option<SocketAddr> 
 // ═══════════════════════════════════════════════════════════════════
 
 fn sort_and_limit(mut results: Vec<TestResult>) -> Vec<TestResult> {
-    // Сортируем по минимальной задержке TCP ping
     results.sort_by(|a, b| {
         a.tcp_ping_min_ms
             .partial_cmp(&b.tcp_ping_min_ms)
             .unwrap_or(std::cmp::Ordering::Equal)
     });
-
-    // Ограничиваем до MAX_KEYS
     results.truncate(MAX_KEYS);
     results
 }
@@ -1876,19 +1755,14 @@ fn write_output(results: &[TestResult]) -> Result<()> {
 
     let mut output = String::new();
 
-    // Заголовок
-    output.push_str(&format!(
-        "# VPN Parser — Best RU CIDR + XHTTP + Reality Keys\n"
-    ));
+    output.push_str("# VPN Parser — Best RU CIDR + XHTTP + Reality Keys\n");
     output.push_str(&format!(
         "# Generated: {}\n",
         Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
     ));
     output.push_str(&format!("# Total keys: {}\n", results.len()));
-    output.push_str(&format!(
-        "# Filter: VLESS + XHTTP + XTLS Reality + CIDR/SNI RU\n"
-    ));
-    output.push_str(&format!("# Sorted by: minimum TCP ping latency\n"));
+    output.push_str("# Filter: VLESS + XHTTP + XTLS Reality + CIDR/SNI RU\n");
+    output.push_str("# Sorted by: minimum TCP ping latency\n");
     output.push_str("#\n");
     output.push_str(&format!(
         "# {:>3} | {:>8} | {:>8} | {:>10} | {:>10} | {}\n",
@@ -1897,7 +1771,6 @@ fn write_output(results: &[TestResult]) -> Result<()> {
     output.push_str(&format!("# {}\n", "─".repeat(75)));
 
     for (i, result) in results.iter().enumerate() {
-        // Информационный комментарий
         output.push_str(&format!(
             "# {:>3} | {:>8.1} | {:>8.1} | {:>10.1} | {:>10.1} | {}:{}\n",
             i + 1,
@@ -1914,7 +1787,6 @@ fn write_output(results: &[TestResult]) -> Result<()> {
     output.push_str("# ═══════════════════ KEYS ═══════════════════\n");
     output.push_str("#\n");
 
-    // Сами ключи
     for result in results {
         output.push_str(&result.config.raw_uri);
         output.push('\n');
